@@ -357,7 +357,24 @@ function parseFretes(text){
 
 // ── Small Components ─────────────────────────────────────────────────────────
 function ChegouInput({value,onSave}){
-  return <input value={value||""} onChange={e=>onSave(e.target.value)} placeholder="dd/mm/aaaa" style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:6,padding:"4px 8px",color:"#4ade80",fontSize:12,width:95,textAlign:"center"}}/>;
+  const[draft,setDraft]=useState(value||"");
+  useEffect(()=>{setDraft(value||"");},[value]);
+  const handleChange=e=>{
+    let v=e.target.value;
+    setDraft(v);
+    if(v.length===10){onSave(v);}
+    if(v.length===0&&value){onSave("");}
+  };
+  const handleBlur=()=>{
+    if(draft.length===10){onSave(draft);}
+    else if(draft.length===0&&value){onSave("");}
+    else{setDraft(value||"");}
+  };
+  const handleKeyDown=e=>{
+    if(e.key==="Enter"&&draft.length===10){onSave(draft);}
+    if(e.key==="Escape"){setDraft(value||"");}
+  };
+  return <input value={draft} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} placeholder="dd/mm/aaaa" style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:6,padding:"4px 8px",color:"#4ade80",fontSize:12,width:95,textAlign:"center"}}/>;
 }
 function LinkBadge({value,placeholder,color,bg,borderColor,icon,onChange,onClear}){
   const[ed,setEd]=useState(false);const[draft,setDraft]=useState(value||"");
