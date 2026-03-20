@@ -605,7 +605,159 @@ function NfTab({nfs,setNfs,fretes,setFretes}){
 }
 
 // ── FRETES TAB ───────────────────────────────────────────────────────────────
-const FR_EMPTY={transportadora:"",nf:"",nfAssociada:"",pedido:"",origem:"",destino:"",previsao:"",valor:"",rastreio:"",obs:"",chegou:""};
+// ── CT-e XML Parser ──────────────────────────────────────────────────────────
+function parseCTe(xmlText){
+  try{
+    const parser=new DOMParser();
+    const doc=parser.parseFromString(xmlText,"text/xml");
+    const ns="http://www.portalfiscal.inf.br/cte";
+    const g=(tag,ctx)=>(ctx||doc).getElementsByTagNameNS(ns,tag)[0]?.textContent||"";
+    const nCT=g("nCT"); const serie=g("serie");
+    const numero=serie?`${nCT}/${serie}`:nCT;
+    const emitNode=doc.getElementsByTagNameNS(ns,"emit")[0];
+    const remNode=doc.getElementsByTagNameNS(ns,"rem")[0];
+    const destNode=doc.getElementsByTagNameNS(ns,"dest")[0];
+    const transportadora=g("xNome",emitNode)||"";
+    const transCNPJ=emitNode?.getElementsByTagNameNS(ns,"CNPJ")[0]?.textContent||"";
+    const remetente=g("xNome",remNode)||"";
+    const destinatario=g("xNome",destNode)||"";
+    const dhEmi=g("dhEmi");
+    const emissao=dhEmi?(()=>{const d=new Date(dhEmi);return`${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;})():"";
+    const vTPrest=g("vTPrest"); const valor=vTPrest?fmtVal(vTPrest):"";
+    const chCTe=g("chCTe");
+    const infQ=doc.getElementsByTagNameNS(ns,"infQ")[0];
+    const pesoB=g("qCarga",infQ)||"";
+    const nDoc=g("nDoc")||"";
+    // Origem / Destino
+    const ini=doc.getElementsByTagNameNS(ns,"ini")[0];
+    const fim=doc.getElementsByTagNameNS(ns,"fim")[0];
+    const xOrig=ini?g("xMun",ini):""; const UFOrig=ini?g("UF",ini):"";
+    const xDest=fim?g("xMun",fim):""; const UFDest=fim?g("UF",fim):"";
+    const origem=xOrig+(UFOrig?" / "+UFOrig:"");
+    const destino=xDest+(UFDest?" / "+UFDest:"");
+    return{numero,emissao,transportadora,transCNPJ,remetente,destinatario,valor,chCTe,origem,destino,pesoB,nDoc,cteOk:true};
+  }catch(e){return null;}
+}
+
+// ── DACTE Modal ──────────────────────────────────────────────────────────────
+function DacteModal({fr,onClose}){
+  const x=fr.cteData||{};
+  const printDacte=()=>{
+    const w=window.open("","_blank","width=900,height=700");
+    const content=document.getElementById("dacte-content").innerHTML;
+    w.document.write(`<html><head><title>DACTE ${fr.nf}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;padding:10px;}
+      .sec{border:2px solid #000;margin-bottom:8px;}
+      .sec-title{background:#000;color:#fff;padding:4px 8px;font-weight:bold;font-size:11px;}
+      .row{display:flex;}
+      .cell{border:1px solid #333;padding:4px 6px;flex:1;}
+      .cell label{display:block;font-size:9px;color:#555;font-weight:bold;}
+    </style>
+    </head><body>${content}</body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(),400);
+  };
+  const cell=(label,value,flex=1)=>(
+    <div style={{border:"1px solid #333",padding:"4px 8px",flex,minWidth:0}}>
+      <div style={{fontSize:9,color:"#777",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{label}</div>
+      <div style={{fontSize:11,color:"#000",wordBreak:"break-word"}}>{value||"—"}</div>
+    </div>
+  );
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1000,overflowY:"auto",padding:"20px 10px"}}>
+      <div style={{maxWidth:860,margin:"0 auto",background:"#fff",borderRadius:8,color:"#000",fontFamily:"Arial,sans-serif",fontSize:11}}>
+        <div className="no-print" style={{background:"#141414",padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",borderRadius:"8px 8px 0 0"}}>
+          <span style={{color:"#fff",fontWeight:700,fontSize:15}}>🚚 DACTE – CT-e {fr.nf}</span>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={printDacte} style={{background:"#cc0000",color:"#fff",border:"none",padding:"8px 18px",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:13}}>🖨️ Imprimir</button>
+            <button onClick={onClose} style={{background:"#333",color:"#fff",border:"none",padding:"8px 18px",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:13}}>✕ Fechar</button>
+          </div>
+        </div>
+        <div id="dacte-content" style={{padding:12}}>
+          <div style={{border:"2px solid #000",marginBottom:6,display:"flex"}}>
+            <div style={{padding:8,borderRight:"1px solid #000",display:"flex",alignItems:"center",gap:10,minWidth:220}}>
+              <img src={LOGO_SRC} alt="Master EPI" style={{height:50,objectFit:"contain"}}/>
+              <div>
+                <div style={{fontWeight:900,fontSize:13}}>MASTER EPI</div>
+                <div style={{fontSize:9,color:"#555"}}>Equipamento de Proteção Individual</div>
+              </div>
+            </div>
+            <div style={{flex:1,textAlign:"center",padding:8,borderRight:"1px solid #000",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{fontWeight:900,fontSize:14,letterSpacing:2}}>DACTE</div>
+              <div style={{fontSize:9,marginTop:2}}>Documento Auxiliar do Conhecimento de Transporte Eletrônico</div>
+              <div style={{fontSize:15,fontWeight:700,marginTop:6}}>{fr.nf||x.numero}</div>
+              <div style={{fontSize:9}}>Série: {(fr.nf||"").split("/")[1]||"—"}</div>
+            </div>
+            <div style={{padding:8,width:260}}>
+              <div style={{border:"1px solid #000",padding:4,marginBottom:4}}>
+                <div style={{fontSize:9,fontWeight:700}}>CHAVE DE ACESSO CT-e</div>
+                <div style={{fontFamily:"monospace",fontSize:8,wordBreak:"break-all",marginTop:2}}>{x.chCTe||"—"}</div>
+              </div>
+              <div style={{border:"2px solid #cc0000",padding:4,marginTop:6,background:"#fff5f5"}}>
+                <div style={{fontSize:9,color:"#cc0000",fontWeight:700}}>VALOR TOTAL</div>
+                <div style={{fontSize:14,color:"#cc0000",fontWeight:900}}>{x.valor||fr.valor||"—"}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{border:"2px solid #000",marginBottom:6}}>
+            <div style={{background:"#000",color:"#fff",padding:"3px 8px",fontSize:10,fontWeight:700}}>TRANSPORTADORA / EMITENTE</div>
+            <div style={{display:"flex",flexWrap:"wrap"}}>
+              {cell("Razão Social",x.transportadora||fr.transportadora,3)}
+              {cell("CNPJ",x.transCNPJ,2)}
+            </div>
+          </div>
+          <div style={{border:"2px solid #000",marginBottom:6}}>
+            <div style={{background:"#000",color:"#fff",padding:"3px 8px",fontSize:10,fontWeight:700}}>REMETENTE / DESTINATÁRIO</div>
+            <div style={{display:"flex",flexWrap:"wrap"}}>
+              {cell("Remetente",x.remetente,2)}
+              {cell("Destinatário",x.destinatario,2)}
+            </div>
+          </div>
+          <div style={{border:"2px solid #000",marginBottom:6}}>
+            <div style={{background:"#000",color:"#fff",padding:"3px 8px",fontSize:10,fontWeight:700}}>DADOS DO CT-e</div>
+            <div style={{display:"flex",flexWrap:"wrap"}}>
+              {cell("Data de Emissão",x.emissao||fr.emissao,1)}
+              {cell("Origem",x.origem||fr.origem,2)}
+              {cell("Destino",x.destino||fr.destino,2)}
+              {cell("Peso",x.pesoB,1)}
+              {cell("Doc. Orig.",x.nDoc,1)}
+            </div>
+          </div>
+          {fr.nfAssociada&&(
+            <div style={{border:"1px solid #3b82f6",padding:"6px 8px",fontSize:10,color:"#1e3a5f",background:"#eff6ff",marginBottom:6}}>
+              <strong>NF Vinculada:</strong> {fr.nfAssociada}
+            </div>
+          )}
+          {fr.obs&&(
+            <div style={{border:"1px solid #ccc",padding:"6px 8px",fontSize:10,color:"#555"}}>
+              <strong>Observações:</strong> {fr.obs}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── buildStats para fretes (por transportadora) ──────────────────────────────
+function buildFreteStats(fretes){
+  const map={};
+  for(const f of fretes){
+    if(!f.emissao||!f.chegou)continue;
+    const d=diffDays(f.emissao,f.chegou);
+    if(d===null||d<0)continue;
+    const k=supplierKey(f.transportadora);
+    if(!map[k])map[k]=[];
+    map[k].push(d);
+  }
+  const s={};
+  for(const[k,a]of Object.entries(map))s[k]={media:Math.round(a.reduce((x,y)=>x+y,0)/a.length),count:a.length};
+  return s;
+}
+
+const FR_EMPTY={transportadora:"",nf:"",emissao:"",nfAssociada:"",pedido:"",origem:"",destino:"",previsao:"",valor:"",rastreio:"",obs:"",chegou:""};
 function FretesTab({fretes,setFretes,nfs,setNfs}){
   const[sub,setSub]=useState("pendentes");
   const[showForm,setShowForm]=useState(false);
@@ -615,7 +767,10 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
   const[editId,setEditId]=useState(null);
   const[form,setForm]=useState(FR_EMPTY);
   const[search,setSearch]=useState("");
+  const[sort,setSort]=useState("newest");
   const[toast,setToast]=useState(null);
+  const[dacteFr,setDacteFr]=useState(null);
+  const xmlRef=useRef();
   const showToast=(m)=>{setToast(m);setTimeout(()=>setToast(null),3500);};
   const inp={width:"100%",background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:6,padding:"8px 10px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"};
 
@@ -631,6 +786,34 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
       return{...f,nfAssociada:nfNum,chegou:matchNf?.chegou||f.chegou};
     }));
   };
+
+  const handleXMLFiles=(files)=>{
+    let ok=0,criados=0;
+    const promises=[...files].map(file=>new Promise(resolve=>{
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const cteData=parseCTe(e.target.result);
+        if(!cteData){resolve();return;}
+        setFretes(prev=>{
+          const idx=prev.findIndex(f=>f.nf&&f.nf.trim()===cteData.numero.trim());
+          if(idx===-1){
+            criados++;ok++;
+            const novo={id:Date.now()+Math.random(),dataCadastro:today(),transportadora:cteData.transportadora,nf:cteData.numero,emissao:cteData.emissao,origem:cteData.origem,destino:cteData.destino,valor:cteData.valor,nfAssociada:"",pedido:"",rastreio:"",obs:"",chegou:"",cteData};
+            resolve();return[novo,...prev];
+          }
+          ok++;
+          const updated=[...prev];
+          updated[idx]={...updated[idx],cteData,transportadora:cteData.transportadora||updated[idx].transportadora,valor:cteData.valor||updated[idx].valor,origem:cteData.origem||updated[idx].origem,destino:cteData.destino||updated[idx].destino,emissao:cteData.emissao||updated[idx].emissao};
+          resolve();return updated;
+        });
+      };
+      reader.readAsText(file);
+    }));
+    Promise.all(promises).then(()=>{
+      setTimeout(()=>showToast(`✅ ${ok} CT-e(s) importado(s)${criados>0?" · "+criados+" novo(s) criado(s)":""}`),200);
+    });
+  };
+
   const handlePaste=(t)=>{setPasteText(t);setPastePreview(t.trim()?parseFretes(t):[]);};
   const handleImport=()=>{
     const exist=new Set(fretes.map(f=>f.nf.trim()));
@@ -650,23 +833,29 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
   };
   const upd=(id,f,v)=>setFretes(prev=>prev.map(fr=>fr.id===id?{...fr,[f]:v}:fr));
 
+  const stats=buildFreteStats(fretes);
   const pendentes=fretes.filter(f=>!f.chegou);
   const finalizados=fretes.filter(f=>!!f.chegou);
   const base=sub==="pendentes"?pendentes:finalizados;
-  const filtered=base.filter(f=>!search||f.transportadora.toLowerCase().includes(search.toLowerCase())||(f.nf||"").includes(search)||(f.pedido||"").includes(search)||(f.nfAssociada||"").includes(search));
+  const filtered=base
+    .filter(f=>!search||f.transportadora.toLowerCase().includes(search.toLowerCase())||(f.nf||"").includes(search)||(f.pedido||"").includes(search)||(f.nfAssociada||"").includes(search))
+    .sort((a,b)=>{const da=parseDate(a.emissao)||parseDate(a.dataCadastro);const db=parseDate(b.emissao)||parseDate(b.dataCadastro);return sort==="oldest"?da-db:db-da;});
 
   return(
     <div>
+      {dacteFr&&<DacteModal fr={dacteFr} onClose={()=>setDacteFr(null)}/>}
       {toast&&<div style={{position:"fixed",top:20,right:20,background:"#065f46",color:"#fff",padding:"12px 20px",borderRadius:10,fontWeight:600,fontSize:14,zIndex:998,boxShadow:"0 4px 20px rgba(0,0,0,0.4)"}}>{toast}</div>}
       <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-        {[["⏳","Pendentes","#fbbf24",pendentes.length],["✅","Finalizados","#34d399",finalizados.length],["🚚","Total","#fff",fretes.length]].map(([ic,lb,cl,ct])=>(
+        {[["⏳","Pendentes","#fbbf24",pendentes.length],["✅","Finalizados","#34d399",finalizados.length],["🚚","Total","#fff",fretes.length],["📎","Com CT-e XML","#a5b4fc",fretes.filter(f=>f.cteData).length]].map(([ic,lb,cl,ct])=>(
           <div key={lb} style={{background:"#141414",borderRadius:8,padding:"10px 18px",display:"flex",alignItems:"center",gap:8,border:"1px solid #2a2a2a"}}>
             <span>{ic}</span><span style={{fontSize:13,color:"#94a3b8"}}>{lb}</span><span style={{fontWeight:700,fontSize:20,color:cl}}>{ct}</span>
           </div>
         ))}
       </div>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
         <button onClick={()=>{setShowPaste(!showPaste);setShowForm(false);}} style={{background:showPaste?"#990000":"#cc0000",color:"#fff",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>📋 Colar Lista</button>
+        <button onClick={()=>xmlRef.current.click()} style={{background:"#1a0a0a",color:"#ff9999",border:"1px solid #cc0000",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>📎 Importar CT-e XML</button>
+        <input ref={xmlRef} type="file" accept=".xml" multiple style={{display:"none"}} onChange={e=>{handleXMLFiles(e.target.files);e.target.value="";}}/>
         <button onClick={()=>{setShowForm(!showForm);setShowPaste(false);setEditId(null);setForm(FR_EMPTY);}} style={{background:"#141414",color:"#e2e8f0",border:"1px solid #2a2a2a",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>+ Manual</button>
       </div>
       {showPaste&&(
@@ -696,7 +885,7 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
         <div style={{background:"#141414",borderRadius:12,padding:20,marginBottom:20,border:"1px solid #2a2a2a"}}>
           <h3 style={{margin:"0 0 14px",fontSize:15,color:"#ff9999"}}>{editId?"✏️ Editar Frete":"🚚 Novo Frete"}</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
-            {[["transportadora","Transportadora *"],["nf","Nº CT-e"],["nfAssociada","NF Vinculada"],["pedido","Nº Pedido"],["origem","Origem"],["destino","Destino"],["previsao","Previsão"],["valor","Valor (R$)"],["rastreio","Rastreio"],["chegou","Data de Chegada"]].map(([k,l])=>(
+            {[["transportadora","Transportadora *"],["nf","Nº CT-e"],["emissao","Data Emissão"],["nfAssociada","NF Vinculada"],["pedido","Nº Pedido"],["origem","Origem"],["destino","Destino"],["previsao","Previsão"],["valor","Valor (R$)"],["rastreio","Rastreio"],["chegou","Data de Chegada"]].map(([k,l])=>(
               <div key={k}><label style={{fontSize:12,color:"#94a3b8",display:"block",marginBottom:4}}>{l}</label><input value={form[k]||""} onChange={e=>setForm(p=>({...p,[k]:e.target.value}))} style={inp}/></div>
             ))}
             <div style={{gridColumn:"1/-1"}}><label style={{fontSize:12,color:"#94a3b8",display:"block",marginBottom:4}}>Observações</label><input value={form.obs||""} onChange={e=>setForm(p=>({...p,obs:e.target.value}))} style={inp}/></div>
@@ -705,8 +894,9 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
         </div>
       )}
       <SubTabs active={sub} setActive={setSub} pendentes={pendentes.length} finalizados={finalizados.length} color="#cc0000"/>
-      <div style={{display:"flex",gap:10,margin:"14px 0"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Buscar transportadora, CT-e ou NF..." style={{flex:1,minWidth:200,background:"#141414",border:"1px solid #2a2a2a",borderRadius:8,padding:"8px 14px",color:"#e2e8f0",fontSize:13}}/>
+      <div style={{display:"flex",gap:10,margin:"14px 0",flexWrap:"wrap"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Buscar transportadora, CT-e ou NF..." style={{flex:1,minWidth:180,background:"#141414",border:"1px solid #2a2a2a",borderRadius:8,padding:"8px 14px",color:"#e2e8f0",fontSize:13}}/>
+        <button onClick={()=>setSort(s=>s==="newest"?"oldest":"newest")} style={{background:"#141414",border:"1px solid #2a2a2a",borderRadius:8,padding:"8px 14px",color:"#e2e8f0",fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>{sort==="newest"?"📅 Mais recente":"📅 Mais antigo"}</button>
       </div>
       {filtered.length===0?(
         <div style={{textAlign:"center",padding:"50px 20px",color:"#475569"}}>
@@ -718,29 +908,38 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:"#141414",borderBottom:"2px solid #cc0000"}}>
-                {["Transportadora","CT-e","NF Vinculada","Pedido","Origem → Destino","Previsão","Valor","Rastreio","Obs","Data Chegada","Status",""].map(h=>(
+                {["CT-e","Emissão","Dias","Transportadora","Prev. Trans.","Valor","NF Vinculada","Pedido","Origem → Destino","Rastreio","Obs","Chegou em",""].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#94a3b8",fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((fr,i)=>{
-                const chegou=!!fr.chegou;
+                const hasCte=!!fr.cteData;
+                const key=supplierKey(fr.transportadora);
+                const st=stats[key];
+                const dias=fr.chegou?diffDays(fr.emissao,fr.chegou):diasAberto(fr.emissao);
                 return(
                   <tr key={fr.id} style={{borderBottom:"1px solid #1a1a1a",background:i%2===0?"#0a0a0a":"#111"}}>
-                    <td style={{padding:"9px 12px",fontWeight:600,color:"#ff4444",whiteSpace:"nowrap"}}>{fr.transportadora}</td>
-                    <td style={{padding:"9px 12px",color:"#ff9999",whiteSpace:"nowrap"}}>{fr.nf||"—"}</td>
+                    <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
+                      <button onClick={()=>setDacteFr(fr)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:5}}>
+                        <span style={{color:hasCte?"#cc0000":"#666",fontWeight:700,fontSize:13,textDecoration:"underline",textUnderlineOffset:2}}>{fr.nf||"—"}</span>
+                        {hasCte?<span style={{fontSize:10,background:"#1a0000",color:"#ff6666",border:"1px solid #cc0000",borderRadius:4,padding:"1px 5px"}}>XML</span>:<span style={{fontSize:10,color:"#444",border:"1px dashed #333",borderRadius:4,padding:"1px 5px"}}>sem XML</span>}
+                      </button>
+                    </td>
+                    <td style={{padding:"9px 12px",color:"#94a3b8",whiteSpace:"nowrap"}}>{fr.emissao||"—"}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center"}}>
+                      {fr.chegou?<span style={{background:"#0f2922",border:"1px solid #10b981",borderRadius:6,padding:"3px 9px",color:"#34d399",fontWeight:700,fontSize:12}}>{dias}d ✓</span>:<DiasBadge dias={dias}/>}
+                    </td>
+                    <td style={{padding:"9px 12px",fontWeight:600,color:"#ff4444",whiteSpace:"nowrap",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}} title={fr.transportadora}>{fr.transportadora}</td>
+                    <td style={{padding:"9px 12px"}}>{st?<MediaBadge media={st.media} count={st.count}/>:<span style={{color:"#333",fontSize:11}}>sem histórico</span>}</td>
+                    <td style={{padding:"9px 12px",color:"#34d399",fontWeight:600,whiteSpace:"nowrap"}}>{fr.valor||"—"}</td>
                     <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}><LinkBadge value={fr.nfAssociada} placeholder="+ vincular NF" color="#60a5fa" bg="#1e3a5f" borderColor="#3b82f6" icon="🔗" onChange={v=>handleNfAssociada(fr.id,v)} onClear={()=>upd(fr.id,"nfAssociada","")}/></td>
                     <td style={{padding:"9px 12px"}}><input value={fr.pedido||""} onChange={e=>upd(fr.id,"pedido",e.target.value)} placeholder="Pedido..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#fbbf24",fontSize:12,width:85}}/></td>
                     <td style={{padding:"9px 12px",color:"#94a3b8",fontSize:12,whiteSpace:"nowrap"}}>{fr.origem&&fr.destino?`${fr.origem} → ${fr.destino}`:fr.origem||fr.destino||"—"}</td>
-                    <td style={{padding:"9px 12px",color:"#94a3b8",whiteSpace:"nowrap"}}>{fr.previsao||"—"}</td>
-                    <td style={{padding:"9px 12px",color:"#34d399",fontWeight:600,whiteSpace:"nowrap"}}>{fr.valor||"—"}</td>
                     <td style={{padding:"9px 12px"}}><input value={fr.rastreio||""} onChange={e=>upd(fr.id,"rastreio",e.target.value)} placeholder="Rastreio..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#c4b5fd",fontSize:12,width:100}}/></td>
                     <td style={{padding:"9px 12px"}}><input value={fr.obs||""} onChange={e=>upd(fr.id,"obs",e.target.value)} placeholder="Obs..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#94a3b8",fontSize:12,width:85}}/></td>
                     <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}><ChegouInput value={fr.chegou} onSave={v=>handleChegou(fr.id,v)}/></td>
-                    <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                      {chegou?<span style={{background:"#052e16",border:"1px solid #16a34a",borderRadius:6,padding:"4px 12px",color:"#4ade80",fontWeight:700,fontSize:12}}>📦 Chegou</span>:<span style={{background:"#1c1917",border:"1px solid #f59e0b",borderRadius:6,padding:"4px 12px",color:"#fbbf24",fontWeight:700,fontSize:12}}>⏳ Pendente</span>}
-                    </td>
                     <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                       <button onClick={()=>{setForm({...fr});setEditId(fr.id);setShowForm(true);setShowPaste(false);}} style={{background:"transparent",border:"1px solid #2a2a2a",color:"#94a3b8",padding:"4px 8px",borderRadius:6,cursor:"pointer",marginRight:4,fontSize:12}}>✏️</button>
                       <button onClick={()=>{if(confirm("Remover?"))setFretes(prev=>prev.filter(f=>f.id!==fr.id));}} style={{background:"transparent",border:"1px solid #7f1d1d",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer",fontSize:12}}>🗑️</button>
@@ -755,7 +954,6 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
     </div>
   );
 }
-
 // ── APP ──────────────────────────────────────────────────────────────────────
 function App(){
   const[tab,setTab]=useState("nf");
