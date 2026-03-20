@@ -611,31 +611,47 @@ function parseCTe(xmlText){
     const parser=new DOMParser();
     const doc=parser.parseFromString(xmlText,"text/xml");
     const ns="http://www.portalfiscal.inf.br/cte";
-    const g=(tag,ctx)=>(ctx||doc).getElementsByTagNameNS(ns,tag)[0]?.textContent||"";
+    // Helper: busca tag com namespace ou sem (fallback)
+    const g=(tag,ctx)=>{
+      const byNs=(ctx||doc).getElementsByTagNameNS(ns,tag)[0]?.textContent||"";
+      if(byNs)return byNs;
+      return(ctx||doc).getElementsByTagName(tag)[0]?.textContent||"";
+    };
     const nCT=g("nCT"); const serie=g("serie");
     const numero=serie?`${nCT}/${serie}`:nCT;
-    const emitNode=doc.getElementsByTagNameNS(ns,"emit")[0];
-    const remNode=doc.getElementsByTagNameNS(ns,"rem")[0];
-    const destNode=doc.getElementsByTagNameNS(ns,"dest")[0];
+    const emitNode=doc.getElementsByTagNameNS(ns,"emit")[0]||doc.getElementsByTagName("emit")[0];
+    const remNode=doc.getElementsByTagNameNS(ns,"rem")[0]||doc.getElementsByTagName("rem")[0];
+    const destNode=doc.getElementsByTagNameNS(ns,"dest")[0]||doc.getElementsByTagName("dest")[0];
     const transportadora=g("xNome",emitNode)||"";
-    const transCNPJ=emitNode?.getElementsByTagNameNS(ns,"CNPJ")[0]?.textContent||"";
+    const transCNPJ=(emitNode?.getElementsByTagNameNS(ns,"CNPJ")[0]||emitNode?.getElementsByTagName("CNPJ")[0])?.textContent||"";
     const remetente=g("xNome",remNode)||"";
     const destinatario=g("xNome",destNode)||"";
     const dhEmi=g("dhEmi");
     const emissao=dhEmi?(()=>{const d=new Date(dhEmi);return`${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;})():"";
     const vTPrest=g("vTPrest"); const valor=vTPrest?fmtVal(vTPrest):"";
     const chCTe=g("chCTe");
-    const infQ=doc.getElementsByTagNameNS(ns,"infQ")[0];
-    const pesoB=g("qCarga",infQ)||"";
-    const nDoc=g("nDoc")||"";
-    // Origem / Destino
-    const ini=doc.getElementsByTagNameNS(ns,"ini")[0];
-    const fim=doc.getElementsByTagNameNS(ns,"fim")[0];
-    const xOrig=ini?g("xMun",ini):""; const UFOrig=ini?g("UF",ini):"";
-    const xDest=fim?g("xMun",fim):""; const UFDest=fim?g("UF",fim):"";
-    const origem=xOrig+(UFOrig?" / "+UFOrig:"");
-    const destino=xDest+(UFDest?" / "+UFDest:"");
-    return{numero,emissao,transportadora,transCNPJ,remetente,destinatario,valor,chCTe,origem,destino,pesoB,nDoc,cteOk:true};
+    const pesoB=g("qCarga")||"";
+    // Origem / Destino — tags corretas do CT-e: xMunIni/UFIni e xMunFim/UFFim
+    const xMunIni=g("xMunIni"); const UFIni=g("UFIni");
+    const xMunFim=g("xMunFim"); const UFFim=g("UFFim");
+    const origem=xMunIni+(UFIni?" / "+UFIni:"");
+    const destino=xMunFim+(UFFim?" / "+UFFim:"");
+    // NFs referenciadas — tag <chave> dentro de <infDoc>
+    const infDocNode=doc.getElementsByTagNameNS(ns,"infDoc")[0]||doc.getElementsByTagName("infDoc")[0];
+    const chaveNodes=infDocNode
+      ?[...(infDocNode.getElementsByTagNameNS(ns,"chave").length?infDocNode.getElementsByTagNameNS(ns,"chave"):infDocNode.getElementsByTagName("chave"))]
+      :[...(doc.getElementsByTagNameNS(ns,"chave").length?doc.getElementsByTagNameNS(ns,"chave"):doc.getElementsByTagName("chave"))];
+    const nfsRef=chaveNodes.map(n=>n.textContent).filter(Boolean);
+    // Formatar NFs ref como "número/série" extraindo da chave (posições 25-34 = nNF, 22-24 = serie)
+    const nfsRefFormatadas=nfsRef.map(ch=>{
+      if(ch.length===44){
+        const nNF=parseInt(ch.substring(25,34),10);
+        const serie=parseInt(ch.substring(22,25),10);
+        return`${String(nNF).padStart(9,"0")}/${serie}`;
+      }
+      return ch;
+    });
+    return{numero,emissao,transportadora,transCNPJ,remetente,destinatario,valor,chCTe,origem,destino,pesoB,nfsRef:nfsRefFormatadas,cteOk:true};
   }catch(e){return null;}
 }
 
@@ -725,9 +741,10 @@ function DacteModal({fr,onClose}){
               {cell("Doc. Orig.",x.nDoc,1)}
             </div>
           </div>
-          {fr.nfAssociada&&(
+          {(x.nfsRef&&x.nfsRef.length>0||fr.nfAssociada)&&(
             <div style={{border:"1px solid #3b82f6",padding:"6px 8px",fontSize:10,color:"#1e3a5f",background:"#eff6ff",marginBottom:6}}>
-              <strong>NF Vinculada:</strong> {fr.nfAssociada}
+              <strong>NF(s) Referenciada(s):</strong>{" "}
+              {x.nfsRef&&x.nfsRef.length>0?x.nfsRef.join(", "):fr.nfAssociada}
             </div>
           )}
           {fr.obs&&(
