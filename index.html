@@ -373,7 +373,7 @@ function SubTabs({active,setActive,pendentes,finalizados,color}){
 
 // ── NF TAB ───────────────────────────────────────────────────────────────────
 // ── MODIFICAÇÃO: NfTab agora recebe highlightNF para piscar a linha correspondente
-function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarParaPedido}){
+function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarParaPedido,onChegouSync}){
   const[sub,setSub]=useState("pendentes");
   const[showPaste,setShowPaste]=useState(false);
   const[showForm,setShowForm]=useState(false);
@@ -423,7 +423,13 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
   const handleChegou=(nfId,chegou)=>{
     setNfs(prev=>prev.map(n=>n.id===nfId?{...n,chegou}:n));
     const nf=nfs.find(n=>n.id===nfId);
-    if(nf)setFretes(prev=>prev.map(fr=>fr.nfAssociada===nf.numero?{...fr,chegou}:fr));
+    if(nf){
+      const nfBase=nf.numero.split("/")[0].trim();
+      // Sincroniza Fretes vinculados
+      setFretes(prev=>prev.map(fr=>fr.nfAssociada===nf.numero?{...fr,chegou}:fr));
+      // Avisa o App para sincronizar Pedidos
+      if(onChegouSync)onChegouSync(nfBase,chegou);
+    }
   };
 
   const handleXMLFiles=(files)=>{
@@ -622,7 +628,7 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
 
 // ── FRETES TAB ───────────────────────────────────────────────────────────────
 const FR_EMPTY={transportadora:"",nf:"",nfAssociada:"",pedido:"",origem:"",destino:"",previsao:"",valor:"",rastreio:"",obs:"",chegou:""};
-function FretesTab({fretes,setFretes,nfs,setNfs}){
+function FretesTab({fretes,setFretes,nfs,setNfs,onChegouSync}){
   const[sub,setSub]=useState("pendentes");
   const[showForm,setShowForm]=useState(false);
   const[showPaste,setShowPaste]=useState(false);
@@ -638,7 +644,16 @@ function FretesTab({fretes,setFretes,nfs,setNfs}){
   const handleChegou=(frId,chegou)=>{
     setFretes(prev=>prev.map(f=>f.id===frId?{...f,chegou}:f));
     const fr=fretes.find(f=>f.id===frId);
-    if(fr&&fr.nfAssociada)setNfs(prev=>prev.map(n=>n.numero===fr.nfAssociada?{...n,chegou}:n));
+    if(fr&&fr.nfAssociada){
+      const nfBase=fr.nfAssociada.split("/")[0].trim();
+      // Sincroniza NF-e
+      setNfs(prev=>prev.map(n=>{
+        const nBase=n.numero.split("/")[0].trim();
+        return nBase===nfBase?{...n,chegou}:n;
+      }));
+      // Sincroniza Pedidos
+      if(onChegouSync)onChegouSync(nfBase,chegou);
+    }
   };
   const handleNfAssociada=(frId,nfNum)=>{
     setFretes(prev=>prev.map(f=>{
@@ -777,6 +792,7 @@ function App(){
   const[tab,setTab]=useState("pedidos");
   const[nfs,setNfs]=useState([]);
   const[fretes,setFretes]=useState([]);
+  const[grupos,setGruposApp]=useState([]);
   const[dataLoaded,setDataLoaded]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
   const[sheetsUrl,setSheetsUrl]=useState(()=>localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL);
@@ -787,6 +803,14 @@ function App(){
   const[highlightNF,setHighlightNF]=useState(null);
   const[highlightPedido,setHighlightPedido]=useState(null);
   const isConnected=!!sheetsUrl;
+
+  // Sincroniza chegouDia nos Pedidos quando NF-e ou Frete é marcado como chegado
+  const onChegouSync=(nfBase,chegou)=>{
+    setGruposApp(prev=>prev.map(g=>{
+      const gBase=(g.nf||"").split("/")[0].trim();
+      return gBase===nfBase?{...g,chegouDia:chegou}:g;
+    }));
+  };
 
   // Navega Pedidos → NF-e
   const navegarParaNF=(nfNumero)=>{
@@ -1047,9 +1071,9 @@ function out(v){
         </div>
       </div>
       <div style={{padding:"24px 28px"}}>
-        {tab==="nf"&&<NfTab nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} highlightNF={highlightNF} onHighlightDone={()=>setHighlightNF(null)} navegarParaPedido={navegarParaPedido}/>}
-        {tab==="fretes"&&<FretesTab fretes={fretes} setFretes={setFretes} nfs={nfs} setNfs={setNfs}/>}
-        {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} fretes={fretes} navegarParaNF={navegarParaNF} highlightPedido={highlightPedido} onHighlightPedidoDone={()=>setHighlightPedido(null)}/>}
+        {tab==="nf"&&<NfTab nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} highlightNF={highlightNF} onHighlightDone={()=>setHighlightNF(null)} navegarParaPedido={navegarParaPedido} onChegouSync={onChegouSync}/>}
+        {tab==="fretes"&&<FretesTab fretes={fretes} setFretes={setFretes} nfs={nfs} setNfs={setNfs} onChegouSync={onChegouSync}/>}
+        {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} navegarParaNF={navegarParaNF} highlightPedido={highlightPedido} onHighlightPedidoDone={()=>setHighlightPedido(null)} gruposApp={grupos} setGruposApp={setGruposApp}/>}
       </div>
     </div>
   );
@@ -1320,9 +1344,29 @@ function CalendarioCompras({grupos, sheetsUrl}){
 }
 
 // ── PEDIDOS TAB ───────────────────────────────────────────────────────────────
-// ── MODIFICAÇÃO: recebe navegarParaNF como prop
-function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onHighlightPedidoDone}) {
-  const [grupos, setGrupos] = useState([]);
+function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, highlightPedido, onHighlightPedidoDone, gruposApp, setGruposApp}) {
+  // grupos vive no App para poder ser sincronizado entre abas
+  // Usamos useState local como cache — setGruposApp sincroniza com o App
+  const [grupos, setGruposLocal] = useState(gruposApp||[]);
+  const loadedRef = useRef(false);
+
+  // Sincroniza quando App muda externamente (ex: onChegouSync) — mas só se não foi a própria PedidosTab que mudou
+  const isInternalUpdate = useRef(false);
+  useEffect(()=>{
+    if(isInternalUpdate.current){ isInternalUpdate.current=false; return; }
+    if(gruposApp&&gruposApp.length>0){
+      setGruposLocal(gruposApp);
+    }
+  },[gruposApp]);
+
+  const setGrupos = (updater)=>{
+    setGruposLocal(prev=>{
+      const next = typeof updater==="function" ? updater(prev) : updater;
+      isInternalUpdate.current = true;
+      if(setGruposApp) setGruposApp(next);
+      return next;
+    });
+  };
   const loadedRef = useRef(false);
   const [syncPed, setSyncPed] = useState("idle");
   const [solicitacoes, setSolicitacoes] = useState([]);
@@ -1400,7 +1444,8 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
         if(cloud&&cloud.length>0){loadedRef.current=true;setGrupos(cloud);setSyncPed("ok");setTimeout(()=>setSyncPed("idle"),2500);return;}
       }
       try{const s=localStorage.getItem(STORAGE_PED_V2);if(s){const d=JSON.parse(s);if(d&&d.length>0){loadedRef.current=true;setGrupos(d);return;}}}catch{}
-      loadedRef.current=true;setGrupos([]);setSyncPed("idle");
+      loadedRef.current=true; // não seta vazio — só marca como carregado
+      setSyncPed("idle");
     }
     async function initSol(){
       if(sheetsUrl){const c=await cloudLoad(STORAGE_SOL_V2);if(c){solLoaded.current=true;setSolicitacoes(c);return;}}
@@ -1412,6 +1457,7 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
 
   useEffect(()=>{
     if(!loadedRef.current)return;
+    if(grupos.length===0)return; // nunca salva vazio
     try{localStorage.setItem(STORAGE_PED_V2,JSON.stringify(grupos));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_PED_V2,grupos);
   },[grupos]);
@@ -1455,7 +1501,24 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
     showToast(`✅ Pedido ${novo.fornecedor} criado!`);
   };
 
-  const updG=(gid,field,value)=>setGrupos(prev=>prev.map(g=>g._gid===gid?{...g,[field]:value}:g));
+  const updG=(gid,field,value)=>{
+    setGrupos(prev=>prev.map(g=>g._gid===gid?{...g,[field]:value}:g));
+    // Quando chegouDia muda, sincroniza NF-e e Fretes
+    if(field==="chegouDia"){
+      const g=grupos.find(x=>x._gid===gid);
+      if(g&&g.nf){
+        const nfBase=g.nf.split("/")[0].trim();
+        if(setNfs)setNfs(prev=>prev.map(n=>{
+          const nBase=n.numero.split("/")[0].trim();
+          return nBase===nfBase?{...n,chegou:value}:n;
+        }));
+        if(setFretes)setFretes(prev=>prev.map(fr=>{
+          const fBase=(fr.nfAssociada||"").split("/")[0].trim();
+          return fBase===nfBase?{...fr,chegou:value}:fr;
+        }));
+      }
+    }
+  };
 
   const getStatus=(g)=>{
     if(g.chegouDia)return{label:"✅ Recebido",color:"#4ade80",bg:"#052e16",border:"#16a34a"};
@@ -1815,42 +1878,85 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
                           </a>
                         )}
                       </div>
-                      {g.itens&&g.itens.length>0?(
-                        <div style={{overflowX:"auto"}}>
-                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                            <thead>
-                              <tr style={{background:"#141414",borderBottom:"1px solid #2a2a2a"}}>
-                                {["Cód","Descrição","Qtd Sug.","Saldo Est.","Vlr Unit."].map(h=>(
-                                  <th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#555",fontWeight:600}}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {g.itens.map((it,i)=>(
-                                <tr key={i} style={{borderBottom:"1px solid #1a1a1a"}}>
-                                  <td style={{padding:"5px 10px",color:"#fbbf24",fontWeight:700}}>{it.cod}</td>
-                                  <td style={{padding:"5px 10px",color:"#e2e8f0",maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao}</td>
-                                  <td style={{padding:"5px 10px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}</td>
-                                  <td style={{padding:"5px 10px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}</td>
-                                  <td style={{padding:"3px 6px",textAlign:"right"}}>
-                                    <input
-                                      value={it.vlrUnit||""}
-                                      onChange={e=>{
-                                        const val=e.target.value;
-                                        setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.map((item,idx)=>idx===i?{...item,vlrUnit:val}:item)}:gr));
-                                      }}
-                                      placeholder="R$"
-                                      style={{width:80,background:"transparent",border:"1px solid #1e3a1e",borderRadius:4,padding:"3px 6px",color:"#34d399",fontSize:11,textAlign:"right",outline:"none"}}
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ):(
-                        <p style={{color:"#334155",fontSize:12,textAlign:"center",padding:"10px 0"}}>Nenhum item cadastrado neste pedido.</p>
-                      )}
+                      {(()=>{
+                        const editandoItens=expandidos[g._gid+"_itens"];
+                        const toggleEditItens=()=>setExpandidos(p=>({...p,[g._gid+"_itens"]:!p[g._gid+"_itens"]}));
+                        const updItem=(i,field,val)=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.map((it,idx)=>idx===i?{...it,[field]:val}:it)}:gr));
+                        const removeItem=(i)=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.filter((_,idx)=>idx!==i)}:gr));
+                        const addItem=()=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:[...(gr.itens||[]),{cod:"",descricao:"",qtdSugerida:"",saldoEstoque:"",vlrUnit:""}]}:gr));
+                        const itens=g.itens||[];
+                        const iStyle={background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:4,padding:"3px 6px",fontSize:11,outline:"none",width:"100%",boxSizing:"border-box"};
+                        return(
+                          <div>
+                            {/* Cabeçalho da tabela com botão editar */}
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                              <span style={{color:"#475569",fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>
+                                📦 Itens do Pedido <span style={{color:"#555",fontWeight:400}}>({itens.length})</span>
+                              </span>
+                              <div style={{display:"flex",gap:6}}>
+                                {editandoItens&&<button onClick={addItem} style={{background:"#052e16",border:"1px solid #16a34a",borderRadius:6,padding:"4px 12px",color:"#4ade80",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Adicionar linha</button>}
+                                <button onClick={toggleEditItens} style={{background:editandoItens?"#cc0000":"#1a1a1a",border:`1px solid ${editandoItens?"#cc0000":"#334155"}`,borderRadius:6,padding:"4px 12px",color:editandoItens?"#fff":"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                                  {editandoItens?"✓ Salvo":"✏️ Editar itens"}
+                                </button>
+                              </div>
+                            </div>
+
+                            {itens.length===0&&!editandoItens?(
+                              <div style={{textAlign:"center",padding:"16px 0",color:"#334155",fontSize:12}}>
+                                Nenhum item. <button onClick={toggleEditItens} style={{background:"transparent",border:"none",color:"#cc0000",cursor:"pointer",fontSize:12,textDecoration:"underline"}}>Adicionar itens</button>
+                              </div>
+                            ):(
+                              <div style={{overflowX:"auto"}}>
+                                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                                  <thead>
+                                    <tr style={{background:"#141414",borderBottom:"1px solid #2a2a2a"}}>
+                                      {["Cód","Descrição","Qtd Sug.","Saldo Est.","Vlr Unit.",...(editandoItens?[""]:[])].map(h=>(
+                                        <th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#555",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {itens.map((it,i)=>(
+                                      <tr key={i} style={{borderBottom:"1px solid #1a1a1a",background:i%2===0?"transparent":"rgba(255,255,255,0.02)"}}>
+                                        {editandoItens?(
+                                          <>
+                                            <td style={{padding:"4px 6px",minWidth:60}}>
+                                              <input value={it.cod||""} onChange={e=>updItem(i,"cod",e.target.value)} style={{...iStyle,color:"#fbbf24",width:65}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:200}}>
+                                              <input value={it.descricao||""} onChange={e=>updItem(i,"descricao",e.target.value)} style={{...iStyle,color:"#e2e8f0",minWidth:180}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:60}}>
+                                              <input value={it.qtdSugerida||""} onChange={e=>updItem(i,"qtdSugerida",e.target.value)} style={{...iStyle,color:"#cc0000",width:65,textAlign:"center"}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:70}}>
+                                              <input value={it.saldoEstoque||""} onChange={e=>updItem(i,"saldoEstoque",e.target.value)} style={{...iStyle,color:"#34d399",width:70,textAlign:"center"}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:80}}>
+                                              <input value={it.vlrUnit||""} onChange={e=>updItem(i,"vlrUnit",e.target.value)} placeholder="R$" style={{...iStyle,color:"#34d399",width:80,textAlign:"right"}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",textAlign:"center"}}>
+                                              <button onClick={()=>removeItem(i)} style={{background:"transparent",border:"1px solid #7f1d1d",borderRadius:4,color:"#f87171",padding:"2px 7px",cursor:"pointer",fontSize:11}}>✕</button>
+                                            </td>
+                                          </>
+                                        ):(
+                                          <>
+                                            <td style={{padding:"5px 10px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>{it.cod||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:"#e2e8f0",maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:"#34d399",textAlign:"right"}}>{it.vlrUnit||"—"}</td>
+                                          </>
+                                        )}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
