@@ -762,33 +762,41 @@ function App(){
         let cloudOk=false;
         try{
           const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
-          if(cnf){setNfs(cnf);cloudOk=true;}else{try{const s=localStorage.getItem(STORAGE_NF);if(s)setNfs(JSON.parse(s));}catch{}}
-          if(cfr){setFretes(cfr);cloudOk=true;}else{try{const s=localStorage.getItem(STORAGE_FR);if(s)setFretes(JSON.parse(s));}catch{}}
+          // Nuvem tem dados? usa nuvem. Senão, usa localStorage. NUNCA sobrescreve com lista vazia.
+          if(cnf&&cnf.length>0){setNfs(cnf);cloudOk=true;}
+          else{try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(d&&d.length>0){setNfs(d);setSyncMsg("⚠️ Nuvem sem NFs — usando cache local");}}}catch{}}
+          if(cfr&&cfr.length>0){setFretes(cfr);cloudOk=true;}
+          else{try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(d&&d.length>0)setFretes(d);}}catch{}}
         }catch{
-          try{const s=localStorage.getItem(STORAGE_NF);if(s)setNfs(JSON.parse(s));}catch{}
-          try{const s=localStorage.getItem(STORAGE_FR);if(s)setFretes(JSON.parse(s));}catch{}
+          // Falha de rede: usa localStorage
+          try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(d&&d.length>0)setNfs(d);}}catch{}
+          try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(d&&d.length>0)setFretes(d);}}catch{}
+          setSyncMsg("⚠️ Sem conexão — usando cache local");
         }
-        setSyncStatus("ok");setSyncMsg(cloudOk?"Nuvem carregada ✓":"Cache local ✓");
-        setTimeout(()=>setSyncStatus("idle"),3000);
+        setSyncStatus("ok");
+        if(cloudOk&&!syncMsg.includes("⚠️"))setSyncMsg("Nuvem carregada ✓");
+        setTimeout(()=>setSyncStatus("idle"),4000);
       }else{
-        try{const s=localStorage.getItem(STORAGE_NF);if(s)setNfs(JSON.parse(s));}catch{}
-        try{const s=localStorage.getItem(STORAGE_FR);if(s)setFretes(JSON.parse(s));}catch{}
+        try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(d&&d.length>0)setNfs(d);}}catch{}
+        try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(d&&d.length>0)setFretes(d);}}catch{}
       }
       setDataLoaded(true);
     }
     init();
   },[sheetsUrl]);
 
-  // Save NFs — só depois que carregou
+  // Save NFs — dupla proteção: localStorage + nuvem
   useEffect(()=>{
     if(!dataLoaded)return;
+    if(nfs.length===0)return; // NUNCA salva lista vazia
     try{localStorage.setItem(STORAGE_NF,JSON.stringify(nfs));}catch{}
     if(sheetsUrl){cloudSave(STORAGE_NF,nfs);}
   },[nfs,dataLoaded]);
 
-  // Save Fretes — só depois que carregou
+  // Save Fretes — dupla proteção: localStorage + nuvem
   useEffect(()=>{
     if(!dataLoaded)return;
+    if(fretes.length===0)return; // NUNCA salva lista vazia
     try{localStorage.setItem(STORAGE_FR,JSON.stringify(fretes));}catch{}
     if(sheetsUrl){cloudSave(STORAGE_FR,fretes);}
   },[fretes,dataLoaded]);
@@ -798,6 +806,50 @@ function App(){
     localStorage.setItem(STORAGE_SHEETS_URL,url);
     setSheetsUrl(url);
     setShowSettings(false);
+  };
+
+  const exportarBackup=()=>{
+    const backup={
+      versao:"masterepi_v1",
+      data: new Date().toLocaleString("pt-BR"),
+      nfs: JSON.parse(localStorage.getItem(STORAGE_NF)||"[]"),
+      fretes: JSON.parse(localStorage.getItem(STORAGE_FR)||"[]"),
+      pedidos: JSON.parse(localStorage.getItem(STORAGE_PED_V2)||"[]"),
+      solicitacoes: JSON.parse(localStorage.getItem(STORAGE_SOL_V2)||"[]"),
+      calendario: JSON.parse(localStorage.getItem(STORAGE_CAL_V1)||"{}"),
+    };
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`masterepi_backup_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.json`;
+    a.click();
+  };
+
+  const importarBackup=(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const backup=JSON.parse(ev.target.result);
+        if(!backup.versao)throw new Error("Arquivo inválido");
+        if(backup.nfs?.length>0){localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));setNfs(backup.nfs);}
+        if(backup.fretes?.length>0){localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes));setFretes(backup.fretes);}
+        if(backup.pedidos?.length>0){localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos));}
+        if(backup.solicitacoes?.length>0){localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes));}
+        if(backup.calendario&&Object.keys(backup.calendario).length>0){localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario));}
+        alert(`✅ Backup restaurado!
+Data do backup: ${backup.data}
+NFs: ${backup.nfs?.length||0} | Fretes: ${backup.fretes?.length||0} | Pedidos: ${backup.pedidos?.length||0}
+
+Recarregando a página...`);
+        setTimeout(()=>window.location.reload(),500);
+      }catch(err){
+        alert("❌ Erro ao importar backup: "+err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value="";
   };
 
   const testConnection=async()=>{
@@ -890,6 +942,17 @@ function out(v){
               <button onClick={saveUrl} style={{background:"#cc0000",color:"#fff",border:"none",padding:"9px 20px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>💾 Salvar e conectar</button>
               {sheetsUrl&&<button onClick={()=>{localStorage.removeItem(STORAGE_SHEETS_URL);setSheetsUrl("");setUrlDraft("");setShowSettings(false);}} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12}}>Desconectar</button>}
               <button onClick={()=>setShowSettings(false)} style={{background:"transparent",color:"#555",border:"1px solid #2a2a2a",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12,marginLeft:"auto"}}>Fechar</button>
+            </div>
+            <div style={{marginTop:20,borderTop:"1px solid #1a1a1a",paddingTop:16}}>
+              <div style={{color:"#f59e0b",fontWeight:700,fontSize:12,marginBottom:10}}>💾 Backup Manual dos Dados</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                <button onClick={exportarBackup} style={{background:"#1c1200",color:"#fbbf24",border:"1px solid #ca8a04",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>⬇️ Exportar Backup (.json)</button>
+                <label style={{background:"#0c2a3a",color:"#67e8f9",border:"1px solid #0891b2",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
+                  ⬆️ Restaurar Backup
+                  <input type="file" accept=".json" onChange={importarBackup} style={{display:"none"}}/>
+                </label>
+                <span style={{fontSize:11,color:"#475569"}}>Faça backup antes de atualizar o site!</span>
+              </div>
             </div>
           </div>
         </div>
