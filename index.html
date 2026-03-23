@@ -1421,7 +1421,11 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     raw=raw.replace(/__ABRIR PDF__/gi,'').replace(/[🟢🔴🟠🟡⚫⚪🔵🟣✅❌⚠️]/g,'').trim();
     const items=[];
     for(const line of raw.split('\n').map(l=>l.trim()).filter(Boolean)){
-      // Remove data no início se existir (ex: 17/03/2026)
+      // Tenta capturar a data no início (ex: 06/03/2026)
+      const dataMatch = line.match(/^(\d{2}\/\d{2}\/\d{4})/);
+      const dataSolicitacao = dataMatch ? dataMatch[1] : "";
+      
+      // Remove a data da linha para processar o resto
       const cleanLine = line.replace(/^\d{2}\/\d{2}\/\d{4}\s*/, '').trim();
       const cols = cleanLine.split('\t');
       
@@ -1429,16 +1433,22 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
         const cod = cols[0]?.trim() || '';
         const desc = cols[1]?.trim() || '';
         const qtd = cols[2]?.trim() || '';
-        const sal = cols[3]?.trim() || '';
+        const vlr = cols[4]?.trim() || cols[3]?.trim() || ''; // Tenta pegar o valor na 5ª ou 4ª coluna
         if(cod && desc) {
-          items.push({cod, descricao: desc, qtdSugerida: qtd, saldoEstoque: sal});
+          items.push({dataSolicitacao, cod, descricao: desc, qtdSugerida: qtd, vlrUnit: vlr, saldoEstoque: ""});
           continue;
         }
       }
       
-      // Fallback para linhas sem TAB, tentando pegar código e descrição por regex
-      const m = cleanLine.match(/^(\d{3,10})\s+(.+)/);
-      if(m) items.push({cod: m[1], descricao: m[2].trim(), qtdSugerida: '', saldoEstoque: ''});
+      // Fallback para linhas sem TAB (exemplo enviado pelo usuário)
+      // 06/03/2026 6539 SAP MOOV EVA BRANCO N.37 - CA 52380 24
+      const m = cleanLine.match(/^(\d{3,10})\s+(.+?)\s+(\d+[\d,.]*)$/);
+      if(m) {
+        items.push({dataSolicitacao, cod: m[1], descricao: m[2].trim(), qtdSugerida: m[3], vlrUnit: '', saldoEstoque: ''});
+      } else {
+        const m2 = cleanLine.match(/^(\d{3,10})\s+(.+)/);
+        if(m2) items.push({dataSolicitacao, cod: m2[1], descricao: m2[2].trim(), qtdSugerida: '', vlrUnit: '', saldoEstoque: ''});
+      }
     }
     return items;
   }
@@ -1839,7 +1849,7 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                         const toggleEditItens=()=>setExpandidos(p=>({...p,[g._gid+"_itens"]:!p[g._gid+"_itens"]}));
                         const updItem=(i,field,val)=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.map((it,idx)=>idx===i?{...it,[field]:val}:it)}:gr));
                         const removeItem=(i)=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.filter((_,idx)=>idx!==i)}:gr));
-                        const addItem=()=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:[...(gr.itens||[]),{cod:"",descricao:"",qtdSugerida:"",saldoEstoque:"",vlrUnit:""}]}:gr));
+                        const addItem=()=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:[...(gr.itens||[]),{dataSolicitacao:today(),cod:"",descricao:"",qtdSugerida:"",saldoEstoque:"",vlrUnit:""}]}:gr));
                         const itens=g.itens||[];
                         const iStyle={background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:4,padding:"3px 6px",fontSize:11,outline:"none",width:"100%",boxSizing:"border-box"};
                         return(
@@ -1865,7 +1875,7 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                                   <thead>
                                     <tr style={{background:"#141414",borderBottom:"1px solid #2a2a2a"}}>
-                                      {["Cód","Descrição","Qtd Sug.","Saldo Est.","Vlr Unit.",...(editandoItens?[""]:[])].map(h=>(
+                                      {["Data","Cód","Descrição","Qtd Sug.","Vlr Unit.",...(editandoItens?[""]:[])].map(h=>(
                                         <th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#555",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
                                       ))}
                                     </tr>
@@ -1875,6 +1885,9 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                                       <tr key={i} style={{borderBottom:"1px solid #1a1a1a",background:i%2===0?"transparent":"rgba(255,255,255,0.02)"}}>
                                         {editandoItens?(
                                           <>
+                                            <td style={{padding:"4px 6px",minWidth:85}}>
+                                              <input value={it.dataSolicitacao||""} onChange={e=>updItem(i,"dataSolicitacao",e.target.value)} style={{...iStyle,color:"#94a3b8",width:85}}/>
+                                            </td>
                                             <td style={{padding:"4px 6px",minWidth:60}}>
                                               <input value={it.cod||""} onChange={e=>updItem(i,"cod",e.target.value)} style={{...iStyle,color:"#fbbf24",width:65}}/>
                                             </td>
@@ -1883,9 +1896,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                                             </td>
                                             <td style={{padding:"4px 6px",minWidth:60}}>
                                               <input value={it.qtdSugerida||""} onChange={e=>updItem(i,"qtdSugerida",e.target.value)} style={{...iStyle,color:"#cc0000",width:65,textAlign:"center"}}/>
-                                            </td>
-                                            <td style={{padding:"4px 6px",minWidth:70}}>
-                                              <input value={it.saldoEstoque||""} onChange={e=>updItem(i,"saldoEstoque",e.target.value)} style={{...iStyle,color:"#34d399",width:70,textAlign:"center"}}/>
                                             </td>
                                             <td style={{padding:"4px 6px",minWidth:80}}>
                                               <input value={it.vlrUnit||""} onChange={e=>updItem(i,"vlrUnit",e.target.value)} placeholder="R$" style={{...iStyle,color:"#34d399",width:80,textAlign:"right"}}/>
@@ -1896,10 +1906,10 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                                           </>
                                         ):(
                                           <>
+                                            <td style={{padding:"5px 10px",color:"#94a3b8",whiteSpace:"nowrap"}}>{it.dataSolicitacao||"—"}</td>
                                             <td style={{padding:"5px 10px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>{it.cod||"—"}</td>
                                             <td style={{padding:"5px 10px",color:"#e2e8f0",maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao||"—"}</td>
                                             <td style={{padding:"5px 10px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}</td>
-                                            <td style={{padding:"5px 10px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}</td>
                                             <td style={{padding:"5px 10px",color:"#34d399",textAlign:"right"}}>{it.vlrUnit||"—"}</td>
                                           </>
                                         )}
