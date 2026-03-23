@@ -1421,10 +1421,24 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     raw=raw.replace(/__ABRIR PDF__/gi,'').replace(/[🟢🔴🟠🟡⚫⚪🔵🟣✅❌⚠️]/g,'').trim();
     const items=[];
     for(const line of raw.split('\n').map(l=>l.trim()).filter(Boolean)){
-      const cols=line.split('\t');
-      if(cols.length>=2){const cod=cols[0]?.trim()||'',desc=cols[1]?.trim()||'',qtd=cols[2]?.trim()||'',sal=cols[3]?.trim()||'';if(cod&&desc)items.push({cod,descricao:desc,qtdSugerida:qtd,saldoEstoque:sal});continue;}
-      const m=line.match(/^(\d{3,6})\s+(.+)/);
-      if(m)items.push({cod:m[1],descricao:m[2].trim(),qtdSugerida:'',saldoEstoque:''});
+      // Remove data no início se existir (ex: 17/03/2026)
+      const cleanLine = line.replace(/^\d{2}\/\d{2}\/\d{4}\s*/, '').trim();
+      const cols = cleanLine.split('\t');
+      
+      if(cols.length >= 2){
+        const cod = cols[0]?.trim() || '';
+        const desc = cols[1]?.trim() || '';
+        const qtd = cols[2]?.trim() || '';
+        const sal = cols[3]?.trim() || '';
+        if(cod && desc) {
+          items.push({cod, descricao: desc, qtdSugerida: qtd, saldoEstoque: sal});
+          continue;
+        }
+      }
+      
+      // Fallback para linhas sem TAB, tentando pegar código e descrição por regex
+      const m = cleanLine.match(/^(\d{3,10})\s+(.+)/);
+      if(m) items.push({cod: m[1], descricao: m[2].trim(), qtdSugerida: '', saldoEstoque: ''});
     }
     return items;
   }
