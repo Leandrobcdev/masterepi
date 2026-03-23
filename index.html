@@ -1459,14 +1459,14 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
 
   const getStatus=(g)=>{
     if(g.chegouDia)return{label:"✅ Recebido",color:"#4ade80",bg:"#052e16",border:"#16a34a"};
-    const nfVinc=nfs&&g.nf?nfs.find(n=>n.numero.trim()===g.nf.trim()):null;
+    const nfVinc=nfs&&g.nf?nfs.find(n=>n.numero.trim()===g.nf.trim()||(n.numero.split("/")[0].trim()===g.nf.split("/")[0].trim())):null;
     const frVinc=fretes&&g.nf?fretes.find(f=>f.nfAssociada&&f.nfAssociada.trim()===g.nf.trim()):null;
     if(frVinc)return{label:"🚚 Frete em trânsito",color:"#a78bfa",bg:"#1a0a2a",border:"#7c3aed"};
     if(nfVinc)return{label:"📄 NF-e vinculada",color:"#67e8f9",bg:"#0c2a3a",border:"#0891b2"};
     if(g.nf)return{label:"📄 NF lançada",color:"#67e8f9",bg:"#0c2a3a",border:"#0891b2"};
-    if(g.faturouDia)return{label:"🔄 Faturando",color:"#fbbf24",bg:"#1c1200",border:"#ca8a04"};
-    if(g.numeroPedido)return{label:"📦 Pedido feito",color:"#a5b4fc",bg:"#1e1b4b",border:"#4f46e5"};
-    if(g.dataAprovacao)return{label:"✔️ Aprovado",color:"#fb923c",bg:"#1c0a00",border:"#ea580c"};
+    if(g.faturouDia)return{label:"🔄 Faturando — aguard. NF",color:"#fbbf24",bg:"#1c1200",border:"#ca8a04"};
+    if(g.numeroPedido)return{label:"⏳ Aguard. NF",color:"#f87171",bg:"#1a0000",border:"#cc0000"};
+    if(g.dataAprovacao)return{label:"📤 Aguard. envio pedido",color:"#fb923c",bg:"#1c0a00",border:"#ea580c"};
     if(g.linkCotacao||g.numCotacao)return{label:"📋 Em cotação",color:"#94a3b8",bg:"#1a1a1a",border:"#334155"};
     return{label:"⏳ Novo",color:"#555",bg:"#111",border:"#222"};
   };
