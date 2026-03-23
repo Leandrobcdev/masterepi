@@ -391,28 +391,34 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone}){
   const showToast=(m)=>{setToast(m);setTimeout(()=>setToast(null),3500);};
   const inp={width:"100%",background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:6,padding:"8px 10px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"};
 
-  // ── MODIFICAÇÃO: quando highlightNF chega, muda aba, busca e scrolla
+  // Passo 1: quando highlightNF chega, ajusta aba + busca
+  // NÃO seta pendingScroll ainda — espera o filtered atualizar
   useEffect(()=>{
     if(!highlightNF)return;
-    // Verifica em qual aba a NF está
     const nf=nfs.find(n=>n.numero.trim()===highlightNF.trim());
-    if(nf){
-      setSub(nf.chegou?"finalizados":"pendentes");
-      setSearch(highlightNF);
-    }
-    // Pequeno delay para o DOM renderizar antes de scrollar
-    const timer=setTimeout(()=>{
-      const el=rowRefs.current[highlightNF];
-      if(el){
-        el.scrollIntoView({behavior:"smooth",block:"center"});
-        el.classList.remove("nf-highlight");
-        void el.offsetWidth; // force reflow
-        el.classList.add("nf-highlight");
-      }
-      if(onHighlightDone)onHighlightDone();
-    },350);
-    return()=>clearTimeout(timer);
+    setSub(nf?.chegou?"finalizados":"pendentes");
+    setSearch(highlightNF);
   },[highlightNF]);
+
+  // Passo 2: quando search muda para o valor do highlightNF, agenda o scroll
+  // Isso garante que filtered já está atualizado com a NF visível
+  useEffect(()=>{
+    if(!highlightNF)return;
+    if(search!==highlightNF)return; // ainda não sincronizou
+    let raf1,raf2;
+    raf1=requestAnimationFrame(()=>{
+      raf2=requestAnimationFrame(()=>{
+        const el=rowRefs.current[highlightNF];
+        if(el){
+          el.scrollIntoView({behavior:"smooth",block:"center"});
+          el.classList.remove("nf-highlight");
+          void el.offsetWidth;
+          el.classList.add("nf-highlight");
+        }
+      });
+    });
+    return()=>{cancelAnimationFrame(raf1);if(raf2)cancelAnimationFrame(raf2);};
+  },[search, highlightNF]);
 
   const handleChegou=(nfId,chegou)=>{
     setNfs(prev=>prev.map(n=>n.id===nfId?{...n,chegou}:n));
