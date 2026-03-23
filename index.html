@@ -796,35 +796,50 @@ function App(){
   };
 
   // Navega NF-e → Pedidos
+  // Remove a série do número da NF (ex: "262691/1" → "262691")
   const navegarParaPedido=(nfNumero)=>{
+    const numBase=nfNumero.split("/")[0].trim();
     setHighlightNF(null);
-    setHighlightPedido(nfNumero);
+    setHighlightPedido(numBase);
     setTab("pedidos");
   };
 
   useEffect(()=>{
     setDataLoaded(false);
     async function init(){
+      // PASSO 1: Carrega localStorage IMEDIATAMENTE (sem esperar nuvem)
+      let localNfs=[], localFr=[];
+      try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(Array.isArray(d)&&d.length>0)localNfs=d;}}catch{}
+      try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(Array.isArray(d)&&d.length>0)localFr=d;}}catch{}
+
+      // Aplica local imediatamente para não ficar com tela vazia
+      if(localNfs.length>0)setNfs(localNfs);
+      if(localFr.length>0)setFretes(localFr);
+
+      // PASSO 2: Se tem nuvem, tenta buscar — só substitui se vier dados MAIS COMPLETOS
       if(sheetsUrl){
-        setSyncStatus("syncing");setSyncMsg("Carregando dados da nuvem...");
-        let cloudOk=false;
+        setSyncStatus("syncing");setSyncMsg("Sincronizando com a nuvem...");
         try{
           const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
-          if(cnf&&cnf.length>0){setNfs(cnf);cloudOk=true;}
-          else{try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(d&&d.length>0){setNfs(d);setSyncMsg("⚠️ Nuvem sem NFs — usando cache local");}}}catch{}}
-          if(cfr&&cfr.length>0){setFretes(cfr);cloudOk=true;}
-          else{try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(d&&d.length>0)setFretes(d);}}catch{}}
+          // Só usa nuvem se tiver MAIS itens que o local (evita nuvem desatualizada sobrescrever)
+          if(cnf&&Array.isArray(cnf)&&cnf.length>0){
+            if(cnf.length>=localNfs.length){
+              setNfs(cnf);
+              // Atualiza localStorage com dado mais recente da nuvem
+              try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
+            }
+          }
+          if(cfr&&Array.isArray(cfr)&&cfr.length>0){
+            if(cfr.length>=localFr.length){
+              setFretes(cfr);
+              try{localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));}catch{}
+            }
+          }
+          setSyncStatus("ok");setSyncMsg("Sincronizado ✓");
         }catch{
-          try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(d&&d.length>0)setNfs(d);}}catch{}
-          try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(d&&d.length>0)setFretes(d);}}catch{}
-          setSyncMsg("⚠️ Sem conexão — usando cache local");
+          setSyncStatus("error");setSyncMsg("⚠️ Nuvem indisponível — usando dados locais");
         }
-        setSyncStatus("ok");
-        if(cloudOk&&!syncMsg.includes("⚠️"))setSyncMsg("Nuvem carregada ✓");
-        setTimeout(()=>setSyncStatus("idle"),4000);
-      }else{
-        try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(d&&d.length>0)setNfs(d);}}catch{}
-        try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(d&&d.length>0)setFretes(d);}}catch{}
+        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
       }
       setDataLoaded(true);
     }
@@ -877,13 +892,31 @@ function App(){
       try{
         const backup=JSON.parse(ev.target.result);
         if(!backup.versao)throw new Error("Arquivo inválido");
-        if(backup.nfs?.length>0){localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));setNfs(backup.nfs);}
-        if(backup.fretes?.length>0){localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes));setFretes(backup.fretes);}
-        if(backup.pedidos?.length>0){localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos));}
-        if(backup.solicitacoes?.length>0){localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes));}
-        if(backup.calendario&&Object.keys(backup.calendario).length>0){localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario));}
-        alert(`✅ Backup restaurado!\nData do backup: ${backup.data}\nNFs: ${backup.nfs?.length||0} | Fretes: ${backup.fretes?.length||0} | Pedidos: ${backup.pedidos?.length||0}\n\nRecarregando a página...`);
-        setTimeout(()=>window.location.reload(),500);
+        if(backup.nfs?.length>0){
+          localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));
+          setNfs(backup.nfs);
+          // Salva na nuvem imediatamente para garantir sincronização
+          if(sheetsUrl)cloudSave(STORAGE_NF,backup.nfs);
+        }
+        if(backup.fretes?.length>0){
+          localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes));
+          setFretes(backup.fretes);
+          if(sheetsUrl)cloudSave(STORAGE_FR,backup.fretes);
+        }
+        if(backup.pedidos?.length>0){
+          localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos));
+          if(sheetsUrl)cloudSave(STORAGE_PED_V2,backup.pedidos);
+        }
+        if(backup.solicitacoes?.length>0){
+          localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes));
+          if(sheetsUrl)cloudSave(STORAGE_SOL_V2,backup.solicitacoes);
+        }
+        if(backup.calendario&&Object.keys(backup.calendario).length>0){
+          localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario));
+          if(sheetsUrl)cloudSave(STORAGE_CAL_V1,backup.calendario);
+        }
+        alert(`✅ Backup restaurado com sucesso!\nData do backup: ${backup.data}\nNFs: ${backup.nfs?.length||0} | Fretes: ${backup.fretes?.length||0} | Pedidos: ${backup.pedidos?.length||0}\n\nRecarregando a página...`);
+        setTimeout(()=>window.location.reload(),800);
       }catch(err){
         alert("❌ Erro ao importar backup: "+err.message);
       }
@@ -1309,11 +1342,18 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
   const showToast = (m) => { setToast(m); setTimeout(()=>setToast(null),3500); };
   const pedidoRefs=useRef({});
 
+  // Helper: compara NF ignorando série (ex: "262691/1" bate com "262691")
+  const nfMatch=(nfA,nfB)=>{
+    if(!nfA||!nfB)return false;
+    const a=nfA.split("/")[0].trim();
+    const b=nfB.split("/")[0].trim();
+    return a===b;
+  };
+
   // Highlight: Passo 1 — quando highlightPedido chega, muda sub e busca
   useEffect(()=>{
     if(!highlightPedido)return;
-    // Procura o pedido que tem aquela NF
-    const g=grupos.find(x=>x.nf&&x.nf.trim()===highlightPedido.trim());
+    const g=grupos.find(x=>x.nf&&nfMatch(x.nf,highlightPedido));
     if(g){
       setSub(g.chegouDia?"finalizados":"abertos");
       setSearch(highlightPedido);
@@ -1329,7 +1369,7 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
     let r1,r2;
     r1=requestAnimationFrame(()=>{
       r2=requestAnimationFrame(()=>{
-        const g=grupos.find(x=>x.nf&&x.nf.trim()===highlightPedido.trim());
+        const g=grupos.find(x=>x.nf&&nfMatch(x.nf,highlightPedido));
         if(g){
           const el=pedidoRefs.current[g._gid];
           if(el){
@@ -1338,7 +1378,6 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
             void el.offsetWidth;
             el.classList.add("nf-highlight");
           }
-          // expande o card para ficar visível
           setExpandidos(prev=>({...prev,[g._gid]:true}));
         }
       });
@@ -1438,13 +1477,19 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onH
 
   const abertos=grupos.filter(g=>!g.chegouDia);
   const finalizados=grupos.filter(g=>!!g.chegouDia);
-  const filtrados=(sub==="abertos"?abertos:finalizados).filter(g=>
-    !search||
-    g.fornecedor?.toLowerCase().includes(search.toLowerCase())||
-    (g.numeroPedido||"").includes(search)||
-    (g.nf||"").includes(search)||
-    (g.numCotacao||"").includes(search)
-  );
+  const filtrados=(sub==="abertos"?abertos:finalizados).filter(g=>{
+    if(!search)return true;
+    const s=search.toLowerCase();
+    const nfBase=(g.nf||"").split("/")[0].trim();
+    const searchBase=search.split("/")[0].trim();
+    return(
+      g.fornecedor?.toLowerCase().includes(s)||
+      (g.numeroPedido||"").includes(s)||
+      (g.nf||"").includes(s)||
+      nfBase===searchBase||
+      (g.numCotacao||"").includes(s)
+    );
+  });
 
   const addSol=()=>{
     if(!novaSol.cod.trim())return;
