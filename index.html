@@ -373,7 +373,7 @@ function SubTabs({active,setActive,pendentes,finalizados,color}){
 
 // ── NF TAB ───────────────────────────────────────────────────────────────────
 // ── MODIFICAÇÃO: NfTab agora recebe highlightNF para piscar a linha correspondente
-function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone}){
+function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarParaPedido}){
   const[sub,setSub]=useState("pendentes");
   const[showPaste,setShowPaste]=useState(false);
   const[showForm,setShowForm]=useState(false);
@@ -584,10 +584,13 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone}){
                     style={{borderBottom:"1px solid #1a1a1a",background:isHighlighted?"#2a1200":i%2===0?"#0a0a0a":"#111",transition:"background 0.3s"}}
                   >
                     <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                      <button onClick={()=>setDanfeNf(nf)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:5}}>
-                        <span style={{color:hasXml?"#cc0000":"#666",fontWeight:700,fontSize:13,textDecoration:"underline",textUnderlineOffset:2}}>{nf.numero}</span>
-                        {hasXml?<span style={{fontSize:10,background:"#1a0000",color:"#ff6666",border:"1px solid #cc0000",borderRadius:4,padding:"1px 5px"}}>XML</span>:<span style={{fontSize:10,color:"#444",border:"1px dashed #333",borderRadius:4,padding:"1px 5px"}}>sem XML</span>}
-                      </button>
+                      <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"nowrap"}}>
+                        <button onClick={()=>setDanfeNf(nf)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:4}}>
+                          <span style={{color:hasXml?"#cc0000":"#666",fontWeight:700,fontSize:13,textDecoration:"underline",textUnderlineOffset:2}}>{nf.numero}</span>
+                          {hasXml?<span style={{fontSize:10,background:"#1a0000",color:"#ff6666",border:"1px solid #cc0000",borderRadius:4,padding:"1px 5px"}}>XML</span>:<span style={{fontSize:10,color:"#444",border:"1px dashed #333",borderRadius:4,padding:"1px 5px"}}>sem XML</span>}
+                        </button>
+                        {navegarParaPedido&&<button onClick={()=>navegarParaPedido(nf.numero.trim())} title="Ver Pedido desta NF" style={{background:"#1c1200",border:"1px solid #f59e0b",borderRadius:5,padding:"3px 9px",color:"#fbbf24",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:3}}>📦 Pedido ↗</button>}
+                      </div>
                     </td>
                     <td style={{padding:"9px 12px",color:"#94a3b8",whiteSpace:"nowrap"}}>{nf.emissao}</td>
                     <td style={{padding:"9px 12px",textAlign:"center"}}>
@@ -782,12 +785,21 @@ function App(){
   const[syncMsg,setSyncMsg]=useState("");
   // ── MODIFICAÇÃO: estado para controlar qual NF deve ser destacada na aba NF-e
   const[highlightNF,setHighlightNF]=useState(null);
+  const[highlightPedido,setHighlightPedido]=useState(null);
   const isConnected=!!sheetsUrl;
 
-  // ── MODIFICAÇÃO: função chamada pelos Pedidos ao clicar numa NF
+  // Navega Pedidos → NF-e
   const navegarParaNF=(nfNumero)=>{
+    setHighlightPedido(null);
     setHighlightNF(nfNumero);
     setTab("nf");
+  };
+
+  // Navega NF-e → Pedidos
+  const navegarParaPedido=(nfNumero)=>{
+    setHighlightNF(null);
+    setHighlightPedido(nfNumero);
+    setTab("pedidos");
   };
 
   useEffect(()=>{
@@ -995,18 +1007,16 @@ function out(v){
         </div>
         <div style={{display:"flex",gap:4,padding:"0 28px",marginTop:14}}>
           {tabs.map(t=>(
-            <button key={t.id} onClick={()=>{setTab(t.id);if(t.id!=="nf")setHighlightNF(null);}} style={{padding:"10px 24px",border:"none",borderRadius:"8px 8px 0 0",cursor:"pointer",fontWeight:700,fontSize:14,letterSpacing:0.5,background:tab===t.id?"#0a0a0a":"transparent",color:tab===t.id?"#cc0000":"#666",borderBottom:tab===t.id?"2px solid #cc0000":"2px solid transparent",transition:"all 0.15s",textTransform:"uppercase"}}>
+            <button key={t.id} onClick={()=>{setTab(t.id);if(t.id!=="nf")setHighlightNF(null);if(t.id!=="pedidos")setHighlightPedido(null);}} style={{padding:"10px 24px",border:"none",borderRadius:"8px 8px 0 0",cursor:"pointer",fontWeight:700,fontSize:14,letterSpacing:0.5,background:tab===t.id?"#0a0a0a":"transparent",color:tab===t.id?"#cc0000":"#666",borderBottom:tab===t.id?"2px solid #cc0000":"2px solid transparent",transition:"all 0.15s",textTransform:"uppercase"}}>
               {t.label}
             </button>
           ))}
         </div>
       </div>
       <div style={{padding:"24px 28px"}}>
-        {/* ── MODIFICAÇÃO: NfTab recebe highlightNF e callback para limpar ── */}
-        {tab==="nf"&&<NfTab nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} highlightNF={highlightNF} onHighlightDone={()=>setHighlightNF(null)}/>}
+        {tab==="nf"&&<NfTab nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} highlightNF={highlightNF} onHighlightDone={()=>setHighlightNF(null)} navegarParaPedido={navegarParaPedido}/>}
         {tab==="fretes"&&<FretesTab fretes={fretes} setFretes={setFretes} nfs={nfs} setNfs={setNfs}/>}
-        {/* ── MODIFICAÇÃO: PedidosTab recebe navegarParaNF ── */}
-        {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} fretes={fretes} navegarParaNF={navegarParaNF}/>}
+        {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} fretes={fretes} navegarParaNF={navegarParaNF} highlightPedido={highlightPedido} onHighlightPedidoDone={()=>setHighlightPedido(null)}/>}
       </div>
     </div>
   );
@@ -1278,7 +1288,7 @@ function CalendarioCompras({grupos, sheetsUrl}){
 
 // ── PEDIDOS TAB ───────────────────────────────────────────────────────────────
 // ── MODIFICAÇÃO: recebe navegarParaNF como prop
-function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF}) {
+function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF, highlightPedido, onHighlightPedidoDone}) {
   const [grupos, setGrupos] = useState([]);
   const loadedRef = useRef(false);
   const [syncPed, setSyncPed] = useState("idle");
@@ -1297,6 +1307,44 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF}) {
   const [novaSol, setNovaSol] = useState({cod:"", descricao:"", data:""});
   const [toast, setToast] = useState(null);
   const showToast = (m) => { setToast(m); setTimeout(()=>setToast(null),3500); };
+  const pedidoRefs=useRef({});
+
+  // Highlight: Passo 1 — quando highlightPedido chega, muda sub e busca
+  useEffect(()=>{
+    if(!highlightPedido)return;
+    // Procura o pedido que tem aquela NF
+    const g=grupos.find(x=>x.nf&&x.nf.trim()===highlightPedido.trim());
+    if(g){
+      setSub(g.chegouDia?"finalizados":"abertos");
+      setSearch(highlightPedido);
+    } else {
+      setSearch(highlightPedido);
+    }
+  },[highlightPedido,grupos]);
+
+  // Highlight: Passo 2 — depois que search sincronizou, scrolla e pisca o card
+  useEffect(()=>{
+    if(!highlightPedido)return;
+    if(search!==highlightPedido)return;
+    let r1,r2;
+    r1=requestAnimationFrame(()=>{
+      r2=requestAnimationFrame(()=>{
+        const g=grupos.find(x=>x.nf&&x.nf.trim()===highlightPedido.trim());
+        if(g){
+          const el=pedidoRefs.current[g._gid];
+          if(el){
+            el.scrollIntoView({behavior:"smooth",block:"center"});
+            el.classList.remove("nf-highlight");
+            void el.offsetWidth;
+            el.classList.add("nf-highlight");
+          }
+          // expande o card para ficar visível
+          setExpandidos(prev=>({...prev,[g._gid]:true}));
+        }
+      });
+    });
+    return()=>{cancelAnimationFrame(r1);if(r2)cancelAnimationFrame(r2);};
+  },[search,highlightPedido]);
 
   const catalogo = React.useMemo(()=>{
     const m={};
@@ -1566,6 +1614,15 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF}) {
         </div>
       )}
 
+      {/* Banner de destaque quando veio da aba NF-e */}
+      {highlightPedido&&sub!=="solicitacoes"&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"8px 16px",marginBottom:14,fontSize:13}}>
+          <span style={{fontSize:18}}>📦</span>
+          <span style={{color:"#fbbf24",fontWeight:700}}>Mostrando pedido com NF <span style={{color:"#fff"}}>{highlightPedido}</span> — vindo da NF-e</span>
+          <button onClick={()=>{setSearch("");if(onHighlightPedidoDone)onHighlightPedidoDone();}} style={{marginLeft:"auto",background:"transparent",border:"1px solid #f59e0b",borderRadius:6,color:"#f59e0b",padding:"3px 10px",cursor:"pointer",fontSize:12}}>✕ Limpar</button>
+        </div>
+      )}
+
       {showModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:"#141414",border:"1px solid #cc0000",borderRadius:12,padding:24,width:"100%",maxWidth:640,maxHeight:"90vh",overflowY:"auto"}}>
@@ -1644,7 +1701,7 @@ function PedidosTab({sheetsUrl, nfs, fretes, navegarParaNF}) {
               const tc=tCot(g),tf=tFat(g),te=tEnt(g);
               const exp=expandidos[g._gid];
               return(
-                <div key={g._gid} style={{background:"#141414",border:"1px solid #2a2a2a",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
+                <div key={g._gid} ref={el=>{if(el)pedidoRefs.current[g._gid]=el;}} style={{background:"#141414",border:"1px solid #2a2a2a",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
                   <div style={{padding:"11px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <button onClick={()=>setExpandidos(p=>({...p,[g._gid]:!p[g._gid]}))}
                       style={{background:"transparent",border:"none",color:"#555",cursor:"pointer",fontSize:14,padding:"0 4px",flexShrink:0}}>{exp?"▼":"▶"}</button>
