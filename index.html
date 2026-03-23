@@ -918,6 +918,7 @@ function out(v){
       <div style={{padding:"24px 28px"}}>
         {tab==="nf"&&<NfTab nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes}/>}
         {tab==="fretes"&&<FretesTab fretes={fretes} setFretes={setFretes} nfs={nfs} setNfs={setNfs}/>}
+
         {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} fretes={fretes}/>}
       </div>
     </div>
@@ -930,6 +931,271 @@ const PLANILHA_DATA = {"contatos":[{"cod":0,"empresa":"COMPRAS MASTER EPI","vend
 // ── PEDIDOS TAB ───────────────────────────────────────────────────────────────
 const STORAGE_PED_V2 = "pedidos_v2";
 const STORAGE_SOL_V2 = "solicitacoes_v1";
+const STORAGE_CAL_V1 = "calendario_compras_v1";
+
+const CALENDARIO_DEFAULT = {
+  seg: ["PLASTCOR","STEELFLEX","MEDIX","VINILSEG"],
+  ter: ["BSB","BRACOL","SÃO MANOEL","PROCIPA","FACINTOS"],
+  qua: ["VOLK","DANNY","KALIPSO","POLIFER"],
+  qui: ["3M","RIOVALLEY","DELTAPLUS"],
+  sex: ["SUPERSAFETY","MAICOL","SUNLAU"],
+  sab: [],
+  dom: [],
+};
+
+const DIAS_LABEL = {seg:"Segunda",ter:"Terça",qua:"Quarta",qui:"Quinta",sex:"Sexta",sab:"Sábado",dom:"Domingo"};
+const DIAS_ORDER = ["seg","ter","qua","qui","sex","sab","dom"];
+
+function getDiaAtual(){
+  const d=new Date().getDay(); // 0=dom,1=seg...6=sab
+  return ["dom","seg","ter","qua","qui","sex","sab"][d];
+}
+
+// ── CalendarioCompras Component ─────────────────────────────────────────────
+function CalendarioCompras({grupos, sheetsUrl}){
+  const[cal,setCal]=useState(CALENDARIO_DEFAULT);
+  const[loaded,setLoaded]=useState(false);
+  const[editando,setEditando]=useState(false);
+  const[editDia,setEditDia]=useState(null);
+  const[novaMarca,setNovaMarca]=useState("");
+  const[marcaDetalhe,setMarcaDetalhe]=useState(null);
+  const diaAtual=getDiaAtual();
+  const marcasHoje=cal[diaAtual]||[];
+
+  useEffect(()=>{
+    async function init(){
+      if(sheetsUrl){
+        const c=await cloudLoad(STORAGE_CAL_V1);
+        if(c){setCal(c);setLoaded(true);return;}
+      }
+      try{const s=localStorage.getItem(STORAGE_CAL_V1);if(s){setCal(JSON.parse(s));setLoaded(true);return;}}catch{}
+      setLoaded(true);
+    }
+    init();
+  },[sheetsUrl]);
+
+  useEffect(()=>{
+    if(!loaded)return;
+    try{localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(cal));}catch{}
+    if(sheetsUrl)cloudSave(STORAGE_CAL_V1,cal);
+  },[cal,loaded]);
+
+  const addMarca=(dia)=>{
+    const m=novaMarca.trim().toUpperCase();
+    if(!m)return;
+    setCal(prev=>({...prev,[dia]:[...(prev[dia]||[]),m]}));
+    setNovaMarca("");
+  };
+
+  const removeMarca=(dia,idx)=>{
+    setCal(prev=>({...prev,[dia]:(prev[dia]||[]).filter((_,i)=>i!==idx)}));
+  };
+
+  // Busca pedidos feitos essa semana para cada marca
+  const hoje=new Date();
+  const inicioSemana=new Date(hoje);
+  inicioSemana.setDate(hoje.getDate()-hoje.getDay()+1); // segunda
+  inicioSemana.setHours(0,0,0,0);
+
+  const pedidosSemana=(marca)=>{
+    const marcaUpper=marca.toUpperCase();
+    return grupos.filter(g=>{
+      if(!g.dataPedido)return false;
+      const [dd,mm,yyyy]=g.dataPedido.split("/");
+      const dt=new Date(`${yyyy}-${mm}-${dd}`);
+      const fornUpper=(g.fornecedor||"").toUpperCase();
+      return dt>=inicioSemana && (fornUpper.includes(marcaUpper)||marcaUpper.includes(fornUpper.split(" ")[0]));
+    });
+  };
+  const todosPedidosMarca=(marca)=>{
+    const marcaUpper=marca.toUpperCase();
+    return grupos.filter(g=>{
+      const fornUpper=(g.fornecedor||"").toUpperCase();
+      return fornUpper.includes(marcaUpper)||marcaUpper.includes(fornUpper.split(" ")[0]);
+    }).sort((a,b)=>{ const pa=a.dataPedido||"",pb=b.dataPedido||""; return pb.split("/").reverse().join("")-pa.split("/").reverse().join(""); });
+  };
+
+  const corDia=(dia)=>{
+    const cores={seg:"#3b82f6",ter:"#8b5cf6",qua:"#10b981",qui:"#f59e0b",sex:"#cc0000",sab:"#475569",dom:"#475569"};
+    return cores[dia]||"#475569";
+  };
+
+  return(
+    <div style={{marginBottom:24}}>
+      {/* Banner do dia */}
+      {marcasHoje.length>0&&(
+        <div style={{background:"linear-gradient(135deg,#1a0a00,#0a0a0a)",border:"2px solid #cc0000",borderRadius:12,padding:"16px 20px",marginBottom:16,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,right:0,width:120,height:"100%",background:"linear-gradient(90deg,transparent,rgba(204,0,0,0.08))",pointerEvents:"none"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+            <span style={{fontSize:22}}>📅</span>
+            <div>
+              <div style={{color:"#cc0000",fontWeight:900,fontSize:16,letterSpacing:1}}>HOJE É DIA DE PEDIR!</div>
+              <div style={{color:"#555",fontSize:11}}>{["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"][hoje.getDay()]}, {hoje.toLocaleDateString("pt-BR")}</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {marcasHoje.map((marca,i)=>{
+              const peds=pedidosSemana(marca);
+              return(
+                <div key={i} onClick={()=>setMarcaDetalhe({marca,dia:diaAtual})} style={{background:"#141414",border:`1px solid ${peds.length>0?"#16a34a":"#cc0000"}`,borderRadius:10,padding:"10px 14px",minWidth:140,position:"relative",cursor:"pointer",transition:"opacity 0.15s"}} onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  {peds.length>0&&<div style={{position:"absolute",top:-8,right:8,background:"#16a34a",color:"#fff",borderRadius:10,padding:"1px 8px",fontSize:10,fontWeight:700}}>✓ PEDIDO</div>}
+                  <div style={{fontWeight:800,color:peds.length>0?"#4ade80":"#fff",fontSize:14,marginBottom:4}}>{marca}</div>
+                  {peds.length>0?(
+                    <div style={{fontSize:10,color:"#34d399"}}>
+                      {peds.slice(0,2).map((p,j)=>(
+                        <div key={j} style={{marginTop:2}}>• {p.dataPedido} — {p.numeroPedido||"em aberto"}</div>
+                      ))}
+                      {peds.length>2&&<div style={{color:"#555"}}>+{peds.length-2} mais</div>}
+                    </div>
+                  ):(
+                    <div style={{fontSize:10,color:"#cc0000",fontWeight:600}}>⚠️ Não pedido ainda</div>
+                  )}
+                  <div style={{fontSize:9,color:"#334155",marginTop:6}}>👆 ver detalhes</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de detalhes da marca */}
+      {marcaDetalhe&&(()=>{
+        const {marca}=marcaDetalhe;
+        const todos=todosPedidosMarca(marca);
+        const desta=pedidosSemana(marca);
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#141414",border:"1px solid #cc0000",borderRadius:12,width:"100%",maxWidth:720,maxHeight:"85vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+              {/* Header */}
+              <div style={{padding:"16px 20px",borderBottom:"1px solid #2a2a2a",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0d0d"}}>
+                <div>
+                  <div style={{fontWeight:900,fontSize:18,color:"#cc0000"}}>{marca}</div>
+                  <div style={{fontSize:12,color:"#475569",marginTop:2}}>
+                    {desta.length>0?<span style={{color:"#4ade80"}}>✓ {desta.length} pedido(s) esta semana</span>:<span style={{color:"#f87171"}}>⚠️ Ainda não pedido esta semana</span>}
+                    {" · "}{todos.length} pedido(s) no histórico
+                  </div>
+                </div>
+                <button onClick={()=>setMarcaDetalhe(null)} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:8,color:"#94a3b8",padding:"6px 14px",cursor:"pointer",fontSize:13,fontWeight:600}}>✕ Fechar</button>
+              </div>
+              {/* Esta semana */}
+              {desta.length>0&&(
+                <div style={{padding:"14px 20px",borderBottom:"1px solid #1a1a1a",background:"#0a1a0a"}}>
+                  <div style={{color:"#4ade80",fontWeight:700,fontSize:12,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>✓ Esta Semana</div>
+                  {desta.map((g,i)=>(
+                    <div key={i} style={{background:"#052e16",border:"1px solid #16a34a",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+                      <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",marginBottom:g.itens&&g.itens.length>0?8:0}}>
+                        <span style={{color:"#4ade80",fontWeight:700,fontSize:13}}>{g.dataPedido}</span>
+                        {g.numCotacao&&<span style={{background:"#1e1b4b",border:"1px solid #4f46e5",borderRadius:5,padding:"2px 8px",color:"#a5b4fc",fontSize:11}}>📋 {g.numCotacao}</span>}
+                        {g.numeroPedido&&<span style={{color:"#94a3b8",fontSize:12}}>Ped: {g.numeroPedido}</span>}
+                        {g.nf&&<span style={{color:"#67e8f9",fontSize:12}}>NF: {g.nf}</span>}
+                        {g.valor&&<span style={{color:"#34d399",fontWeight:600,fontSize:12}}>{g.valor}</span>}
+                        <span style={{color:"#555",fontSize:11,marginLeft:"auto"}}>{g.fornecedor}</span>
+                      </div>
+                      {g.itens&&g.itens.length>0&&(
+                        <div style={{overflowX:"auto"}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                            <thead><tr style={{borderBottom:"1px solid #16a34a"}}>{["Cód","Descrição","Qtd","Saldo"].map(h=><th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#4ade80",fontWeight:600}}>{h}</th>)}</tr></thead>
+                            <tbody>{g.itens.map((it,j)=>(
+                              <tr key={j} style={{borderBottom:"1px solid #0a2a0a"}}>
+                                <td style={{padding:"4px 8px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>{it.cod}</td>
+                                <td style={{padding:"4px 8px",color:"#e2e8f0",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao}</td>
+                                <td style={{padding:"4px 8px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}</td>
+                                <td style={{padding:"4px 8px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}</td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Histórico */}
+              <div style={{padding:"14px 20px",overflowY:"auto",flex:1}}>
+                <div style={{color:"#94a3b8",fontWeight:700,fontSize:12,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>📋 Histórico Completo</div>
+                {todos.length===0?(
+                  <p style={{color:"#334155",fontSize:13,textAlign:"center",padding:"20px 0"}}>Nenhum pedido encontrado para {marca}</p>
+                ):todos.map((g,i)=>(
+                  <div key={i} style={{borderBottom:"1px solid #1a1a1a",padding:"10px 0",display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
+                    <div style={{minWidth:85}}>
+                      <div style={{color:"#fbbf24",fontWeight:700,fontSize:12}}>{g.dataPedido}</div>
+                      <div style={{color:"#475569",fontSize:10,marginTop:2}}>{g.fornecedor}</div>
+                    </div>
+                    <div style={{flex:1,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                      {g.numCotacao&&<span style={{background:"#1a1a2a",border:"1px solid #4f46e5",borderRadius:5,padding:"2px 8px",color:"#a5b4fc",fontSize:11}}>📋 {g.numCotacao}</span>}
+                      {g.numeroPedido&&<span style={{color:"#94a3b8",fontSize:11}}>Ped: {g.numeroPedido}</span>}
+                      {g.nf&&<span style={{color:"#67e8f9",fontSize:11}}>NF: {g.nf}</span>}
+                      {g.chegouDia&&<span style={{background:"#052e16",border:"1px solid #16a34a",borderRadius:5,padding:"2px 7px",color:"#4ade80",fontSize:10}}>✓ Chegou {g.chegouDia}</span>}
+                      {g.valor&&<span style={{color:"#34d399",fontSize:11,fontWeight:600}}>{g.valor}</span>}
+                    </div>
+                    {g.itens&&g.itens.length>0&&(
+                      <div style={{width:"100%",marginTop:4,paddingLeft:97}}>
+                        {g.itens.slice(0,3).map((it,j)=>(
+                          <div key={j} style={{fontSize:10,color:"#64748b",marginBottom:2}}>
+                            <span style={{color:"#fbbf24",fontWeight:600}}>{it.cod}</span> — {it.descricao.substring(0,60)}{it.descricao.length>60?"...":""}
+                            {it.qtdSugerida&&<span style={{color:"#cc0000",marginLeft:8}}>qtd:{it.qtdSugerida}</span>}
+                          </div>
+                        ))}
+                        {g.itens.length>3&&<div style={{fontSize:10,color:"#334155"}}>+{g.itens.length-3} itens</div>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Calendário semanal compacto */}
+      <div style={{background:"#141414",border:"1px solid #2a2a2a",borderRadius:10,overflow:"hidden"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid #2a2a2a"}}>
+          <span style={{fontWeight:700,color:"#94a3b8",fontSize:13}}>📋 Calendário de Compras Semanal</span>
+          <button onClick={()=>setEditando(!editando)} style={{background:editando?"#cc0000":"transparent",color:editando?"#fff":"#555",border:"1px solid #2a2a2a",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>
+            {editando?"✓ Salvo":"✏️ Editar"}
+          </button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:0}}>
+          {DIAS_ORDER.filter(d=>d!=="sab"&&d!=="dom").map((dia)=>{
+            const isHoje=dia===diaAtual;
+            const cor=corDia(dia);
+            const marcas=cal[dia]||[];
+            return(
+              <div key={dia} style={{borderRight:"1px solid #1a1a1a",padding:"10px 12px",background:isHoje?"#1a0a0a":"transparent",borderBottom:isHoje?`2px solid ${cor}`:"2px solid transparent"}}>
+                <div style={{fontWeight:700,color:isHoje?cor:"#475569",fontSize:12,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>{DIAS_LABEL[dia]}</div>
+                {marcas.map((m,i)=>{
+                  const peds=pedidosSemana(m);
+                  return(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+                      <span onClick={()=>!editando&&setMarcaDetalhe({marca:m,dia})} style={{fontSize:11,color:peds.length>0?"#4ade80":isHoje?"#fff":"#64748b",fontWeight:peds.length>0||isHoje?600:400,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:editando?"default":"pointer",textDecoration:editando?"none":"underline",textUnderlineOffset:2}} title={editando?m:"Clique para ver pedidos de "+m}>
+                        {peds.length>0?"✓ ":""}{m}
+                      </span>
+                      {editando&&<button onClick={()=>removeMarca(dia,i)} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,padding:"0 2px",flexShrink:0,color:"#cc0000"}}>✕</button>}
+                    </div>
+                  );
+                })}
+                {editando&&(
+                  <div style={{marginTop:6,display:"flex",gap:4}}>
+                    {editDia===dia?(
+                      <>
+                        <input autoFocus value={novaMarca} onChange={e=>setNovaMarca(e.target.value)}
+                          onKeyDown={e=>{if(e.key==="Enter")addMarca(dia);if(e.key==="Escape")setEditDia(null);}}
+                          placeholder="Marca..." style={{background:"#0a0a0a",border:`1px solid ${cor}`,borderRadius:4,padding:"3px 6px",color:"#e2e8f0",fontSize:11,width:"100%"}}/>
+                        <button onClick={()=>addMarca(dia)} style={{background:cor,color:"#fff",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:11,flexShrink:0}}>+</button>
+                      </>
+                    ):(
+                      <button onClick={()=>{setEditDia(dia);setNovaMarca("");}} style={{background:"transparent",border:`1px dashed #2a2a2a`,borderRadius:4,padding:"3px 8px",color:"#334155",cursor:"pointer",fontSize:10,width:"100%"}}>+ adicionar</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function PedidosTab({sheetsUrl, nfs, fretes}) {
   const [grupos, setGrupos] = useState([]);
@@ -1179,6 +1445,9 @@ function PedidosTab({sheetsUrl, nfs, fretes}) {
     <div>
       {toast&&<div style={{position:"fixed",top:20,right:20,background:"#065f46",color:"#fff",padding:"12px 20px",borderRadius:10,fontWeight:600,fontSize:14,zIndex:998,boxShadow:"0 4px 20px rgba(0,0,0,0.4)"}}>{toast}</div>}
       {syncPed!=="idle"&&<div style={{display:"flex",alignItems:"center",gap:8,background:syncPed==="syncing"?"#1c1200":"#052e16",border:`1px solid ${syncPed==="syncing"?"#ca8a04":"#16a34a"}`,borderRadius:8,padding:"8px 16px",marginBottom:14,fontSize:12,color:syncPed==="syncing"?"#fbbf24":"#4ade80",fontWeight:600}}><span style={{width:8,height:8,borderRadius:"50%",background:syncPed==="syncing"?"#fbbf24":"#4ade80",display:"inline-block"}}/>{syncPed==="syncing"?"☁️ Carregando pedidos...":"☁️ Sincronizado ✓"}</div>}
+
+      {/* Calendário de compras */}
+      <CalendarioCompras grupos={grupos} sheetsUrl={sheetsUrl}/>
 
       {/* Contadores */}
       <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
