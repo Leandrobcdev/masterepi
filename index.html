@@ -31,6 +31,9 @@ const {useState,useEffect,useRef}=React;
 const STORAGE_NF="nfe_v4";
 const STORAGE_FR="fretes_v3";
 const STORAGE_SHEETS_URL="sheets_url_v1";
+const STORAGE_PED_V2 = "pedidos_v2";
+const STORAGE_SOL_V2 = "solicitacoes_v1";
+const STORAGE_CAL_V1 = "calendario_compras_v1";
 const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbzqg_7D_g6ndSs3xQ5Yn36m0b_uoAD1RlCgOzJJwGfLdOu8RU7lePVQQD9U1wFB96Xr/exec";
 
 async function cloudSave(key, value){
@@ -57,7 +60,7 @@ async function cloudLoad(key){
     return JSON.parse(text);
   }catch{return null;}
 }
-const LOGO_SRC="data:image/png;base64,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";
+const LOGO_SRC="data:image/png;base64,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";
 
 function today(){return new Date().toLocaleDateString("pt-BR");}
 function parseDate(str){if(!str)return 0;const[d,m,y]=str.split("/");return new Date(`${y}-${m}-${d}`).getTime()||0;}
@@ -371,8 +374,6 @@ function SubTabs({active,setActive,pendentes,finalizados,color}){
   );
 }
 
-// ── NF TAB ───────────────────────────────────────────────────────────────────
-// ── MODIFICAÇÃO: NfTab agora recebe highlightNF para piscar a linha correspondente
 function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarParaPedido,onChegouSync}){
   const[sub,setSub]=useState("pendentes");
   const[showPaste,setShowPaste]=useState(false);
@@ -386,13 +387,10 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
   const[toast,setToast]=useState(null);
   const[danfeNf,setDanfeNf]=useState(null);
   const xmlRef=useRef();
-  // ref para as linhas da tabela para poder fazer scroll
   const rowRefs=useRef({});
   const showToast=(m)=>{setToast(m);setTimeout(()=>setToast(null),3500);};
   const inp={width:"100%",background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:6,padding:"8px 10px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"};
 
-  // Passo 1: quando highlightNF chega, ajusta aba + busca
-  // NÃO seta pendingScroll ainda — espera o filtered atualizar
   useEffect(()=>{
     if(!highlightNF)return;
     const nf=nfs.find(n=>n.numero.trim()===highlightNF.trim());
@@ -400,11 +398,9 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
     setSearch(highlightNF);
   },[highlightNF]);
 
-  // Passo 2: quando search muda para o valor do highlightNF, agenda o scroll
-  // Isso garante que filtered já está atualizado com a NF visível
   useEffect(()=>{
     if(!highlightNF)return;
-    if(search!==highlightNF)return; // ainda não sincronizou
+    if(search!==highlightNF)return;
     let raf1,raf2;
     raf1=requestAnimationFrame(()=>{
       raf2=requestAnimationFrame(()=>{
@@ -425,9 +421,7 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
     const nf=nfs.find(n=>n.id===nfId);
     if(nf){
       const nfBase=nf.numero.split("/")[0].trim();
-      // Sincroniza Fretes vinculados
       setFretes(prev=>prev.map(fr=>fr.nfAssociada===nf.numero?{...fr,chegou}:fr));
-      // Avisa o App para sincronizar Pedidos
       if(onChegouSync)onChegouSync(nfBase,chegou);
     }
   };
@@ -492,7 +486,6 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
     <div>
       {danfeNf&&<DanfeModal nf={danfeNf} onClose={()=>setDanfeNf(null)}/>}
       {toast&&<div style={{position:"fixed",top:20,right:20,background:"#065f46",color:"#fff",padding:"12px 20px",borderRadius:10,fontWeight:600,fontSize:14,zIndex:998,boxShadow:"0 4px 20px rgba(0,0,0,0.4)"}}>{toast}</div>}
-      {/* Counters */}
       <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
         {[["⏳","Pendentes","#fbbf24",pendentes.length],["✅","Finalizados","#34d399",finalizados.length],["📋","Total","#fff",nfs.length],["📎","Com XML","#a5b4fc",nfs.filter(n=>n.xmlData).length]].map(([ic,lb,cl,ct])=>(
           <div key={lb} style={{background:"#141414",borderRadius:8,padding:"10px 18px",display:"flex",alignItems:"center",gap:8,border:"1px solid #2a2a2a"}}>
@@ -500,7 +493,6 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
           </div>
         ))}
       </div>
-      {/* Action buttons */}
       <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
         <button onClick={()=>{setShowPaste(!showPaste);setShowForm(false);}} style={{background:showPaste?"#990000":"#cc0000",color:"#fff",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>📋 Colar Lista</button>
         <button onClick={()=>xmlRef.current.click()} style={{background:"#1a0a0a",color:"#ff9999",border:"1px solid #cc0000",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>📎 Importar XML(s)</button>
@@ -544,7 +536,6 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
       )}
       <SubTabs active={sub} setActive={setSub} pendentes={pendentes.length} finalizados={finalizados.length} color="#cc0000"/>
 
-      {/* ── MODIFICAÇÃO: banner de destaque quando veio de Pedidos ── */}
       {highlightNF&&(
         <div style={{display:"flex",alignItems:"center",gap:10,background:"#1a0d00",border:"1px solid #cc0000",borderRadius:8,padding:"8px 16px",margin:"10px 0",fontSize:13}}>
           <span style={{fontSize:18}}>🔍</span>
@@ -583,7 +574,6 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
                 const hasXml=!!nf.xmlData;
                 const isHighlighted=highlightNF&&nf.numero.trim()===highlightNF.trim();
                 return(
-                  // ── MODIFICAÇÃO: ref na linha para scroll + classe de flash
                   <tr
                     key={nf.id}
                     ref={el=>{ if(el) rowRefs.current[nf.numero]=el; }}
@@ -626,7 +616,6 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
   );
 }
 
-// ── FRETES TAB ───────────────────────────────────────────────────────────────
 const FR_EMPTY={transportadora:"",nf:"",nfAssociada:"",pedido:"",origem:"",destino:"",previsao:"",valor:"",rastreio:"",obs:"",chegou:""};
 function FretesTab({fretes,setFretes,nfs,setNfs,onChegouSync}){
   const[sub,setSub]=useState("pendentes");
@@ -646,12 +635,10 @@ function FretesTab({fretes,setFretes,nfs,setNfs,onChegouSync}){
     const fr=fretes.find(f=>f.id===frId);
     if(fr&&fr.nfAssociada){
       const nfBase=fr.nfAssociada.split("/")[0].trim();
-      // Sincroniza NF-e
       setNfs(prev=>prev.map(n=>{
         const nBase=n.numero.split("/")[0].trim();
         return nBase===nfBase?{...n,chegou}:n;
       }));
-      // Sincroniza Pedidos
       if(onChegouSync)onChegouSync(nfBase,chegou);
     }
   };
@@ -787,40 +774,31 @@ function FretesTab({fretes,setFretes,nfs,setNfs,onChegouSync}){
   );
 }
 
-// ── APP ──────────────────────────────────────────────────────────────────────
 function App(){
   const[tab,setTab]=useState("pedidos");
   const[nfs,setNfs]=useState([]);
   const[fretes,setFretes]=useState([]);
-  const[grupos,setGruposApp]=useState([]);
+  const [chegouApply, setChegouApply] = useState(null);
+
+  const onChegouSync=(nfBase,chegou)=>{
+    setChegouApply({nfBase, chegou, ts: Date.now()});
+  };
   const[dataLoaded,setDataLoaded]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
   const[sheetsUrl,setSheetsUrl]=useState(()=>localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL);
   const[urlDraft,setUrlDraft]=useState(()=>localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL);
   const[syncStatus,setSyncStatus]=useState("idle");
   const[syncMsg,setSyncMsg]=useState("");
-  // ── MODIFICAÇÃO: estado para controlar qual NF deve ser destacada na aba NF-e
   const[highlightNF,setHighlightNF]=useState(null);
   const[highlightPedido,setHighlightPedido]=useState(null);
   const isConnected=!!sheetsUrl;
 
-  // Sincroniza chegouDia nos Pedidos quando NF-e ou Frete é marcado como chegado
-  const onChegouSync=(nfBase,chegou)=>{
-    setGruposApp(prev=>prev.map(g=>{
-      const gBase=(g.nf||"").split("/")[0].trim();
-      return gBase===nfBase?{...g,chegouDia:chegou}:g;
-    }));
-  };
-
-  // Navega Pedidos → NF-e
   const navegarParaNF=(nfNumero)=>{
     setHighlightPedido(null);
     setHighlightNF(nfNumero);
     setTab("nf");
   };
 
-  // Navega NF-e → Pedidos
-  // Remove a série do número da NF (ex: "262691/1" → "262691")
   const navegarParaPedido=(nfNumero)=>{
     const numBase=nfNumero.split("/")[0].trim();
     setHighlightNF(null);
@@ -831,25 +809,20 @@ function App(){
   useEffect(()=>{
     setDataLoaded(false);
     async function init(){
-      // PASSO 1: Carrega localStorage IMEDIATAMENTE (sem esperar nuvem)
       let localNfs=[], localFr=[];
       try{const s=localStorage.getItem(STORAGE_NF);if(s){const d=JSON.parse(s);if(Array.isArray(d)&&d.length>0)localNfs=d;}}catch{}
       try{const s=localStorage.getItem(STORAGE_FR);if(s){const d=JSON.parse(s);if(Array.isArray(d)&&d.length>0)localFr=d;}}catch{}
 
-      // Aplica local imediatamente para não ficar com tela vazia
       if(localNfs.length>0)setNfs(localNfs);
       if(localFr.length>0)setFretes(localFr);
 
-      // PASSO 2: Se tem nuvem, tenta buscar — só substitui se vier dados MAIS COMPLETOS
       if(sheetsUrl){
         setSyncStatus("syncing");setSyncMsg("Sincronizando com a nuvem...");
         try{
           const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
-          // Só usa nuvem se tiver MAIS itens que o local (evita nuvem desatualizada sobrescrever)
           if(cnf&&Array.isArray(cnf)&&cnf.length>0){
             if(cnf.length>=localNfs.length){
               setNfs(cnf);
-              // Atualiza localStorage com dado mais recente da nuvem
               try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
             }
           }
@@ -919,7 +892,6 @@ function App(){
         if(backup.nfs?.length>0){
           localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));
           setNfs(backup.nfs);
-          // Salva na nuvem imediatamente para garantir sincronização
           if(sheetsUrl)cloudSave(STORAGE_NF,backup.nfs);
         }
         if(backup.fretes?.length>0){
@@ -1073,19 +1045,13 @@ function out(v){
       <div style={{padding:"24px 28px"}}>
         {tab==="nf"&&<NfTab nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} highlightNF={highlightNF} onHighlightDone={()=>setHighlightNF(null)} navegarParaPedido={navegarParaPedido} onChegouSync={onChegouSync}/>}
         {tab==="fretes"&&<FretesTab fretes={fretes} setFretes={setFretes} nfs={nfs} setNfs={setNfs} onChegouSync={onChegouSync}/>}
-        {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} navegarParaNF={navegarParaNF} highlightPedido={highlightPedido} onHighlightPedidoDone={()=>setHighlightPedido(null)} gruposApp={grupos} setGruposApp={setGruposApp}/>}
+        {tab==="pedidos"&&<PedidosTab sheetsUrl={sheetsUrl} nfs={nfs} setNfs={setNfs} fretes={fretes} setFretes={setFretes} navegarParaNF={navegarParaNF} highlightPedido={highlightPedido} onHighlightPedidoDone={()=>setHighlightPedido(null)} onChegouApply={chegouApply}/>}
       </div>
     </div>
   );
 }
 
-// ── PLANILHA DATA ─────────────────────────────────────────────────────────────
 const PLANILHA_DATA = {"contatos":[{"cod":0,"empresa":"COMPRAS MASTER EPI","vendedor":"Leandro Costa","telefone":"55 91 9193-0407","fatMin":""},{"cod":1,"empresa":"MEDIX","vendedor":"Josué","telefone":"55 91 9151-0220","fatMin":""},{"cod":2,"empresa":"SUPERSAFETY","vendedor":"Diucelia","telefone":"55 91 8410-3087","fatMin":""},{"cod":3,"empresa":"BSB","vendedor":"Marlus","telefone":"55 91 9162-6008","fatMin":"2900"},{"cod":4,"empresa":"STEELFLEX","vendedor":"Marlus","telefone":"55 91 9162-6008","fatMin":"5090"},{"cod":5,"empresa":"VINILSEG","vendedor":"Marlus","telefone":"55 91 9162-6008","fatMin":"700"},{"cod":6,"empresa":"PLASTCOR","vendedor":"Kelly Cristina","telefone":"55 19 98416-0115","fatMin":"1500"},{"cod":7,"empresa":"L&M Representações OCULOS RJ","vendedor":"Ritiele","telefone":"55 11 94844-4870","fatMin":"900"},{"cod":8,"empresa":"QUALIFLEX","vendedor":"Bruno","telefone":"55 11 97819-2722","fatMin":""},{"cod":9,"empresa":"MAICOL","vendedor":"Diucelia","telefone":"55 91 8410-3087","fatMin":"2500"},{"cod":10,"empresa":"FACINTOS","vendedor":"Josué","telefone":"55 91 9151-0220","fatMin":""},{"cod":11,"empresa":"EPI 360","vendedor":"Daiana","telefone":"55 19 99671-2072","fatMin":"3000"},{"cod":12,"empresa":"3M","vendedor":"Júlia","telefone":"55 91 8246-5230","fatMin":"5000"},{"cod":13,"empresa":"SUNLAU","vendedor":"Diucelia","telefone":"55 91 8410-3087","fatMin":"1500"},{"cod":14,"empresa":"DEXCAR","vendedor":"DALILA","telefone":"55 11 97670-9433","fatMin":""},{"cod":15,"empresa":"KALIPSO","vendedor":"Marcos","telefone":"55 91 9235-2001","fatMin":"1500"},{"cod":16,"empresa":"REAL SINALIZAÇÃO","vendedor":"Felipe","telefone":"55 11 3917-5139","fatMin":""},{"cod":17,"empresa":"LIBUS","vendedor":"Lucas","telefone":"55 91 8546-9529","fatMin":"3000"},{"cod":18,"empresa":"ANSELL","vendedor":"Laerte","telefone":"55 11 91012-8448","fatMin":"3500"},{"cod":19,"empresa":"BALASKA","vendedor":"PAULA","telefone":"55 11 3322-5528","fatMin":"3500"},{"cod":20,"empresa":"ANADONA","vendedor":"ALINE","telefone":"55 11 94761-5185","fatMin":"1000"},{"cod":21,"empresa":"CAMPER","vendedor":"Isabelly","telefone":"55 91 8538-0309","fatMin":"1200"},{"cod":22,"empresa":"METIER","vendedor":"Eliana","telefone":"55 91 8078-3698","fatMin":"2000"},{"cod":23,"empresa":"LEDAN","vendedor":"Ana Paula","telefone":"55 11 97511-7768","fatMin":"1500"},{"cod":24,"empresa":"RIPLAS","vendedor":"Micaely","telefone":"55 11 96222-6121","fatMin":"1000"},{"cod":25,"empresa":"LDI SAFETY","vendedor":"Marcos","telefone":"55 91 9235-2001","fatMin":"1500"},{"cod":26,"empresa":"RIOVALLEY","vendedor":"Elen Larissa","telefone":"55 18 99766-7741","fatMin":"3000"},{"cod":27,"empresa":"DANNY","vendedor":"José Maria","telefone":"55 91 988591982","fatMin":"2500"},{"cod":28,"empresa":"LUXNORTE","vendedor":"Talita","telefone":"55 91 8253-6240","fatMin":"200"},{"cod":29,"empresa":"VALEPLAST","vendedor":"Rhalwane","telefone":"55 24 98114-5931","fatMin":"2000"},{"cod":30,"empresa":"MERCADÃO FIRE","vendedor":"Eden","telefone":"55 91 8020-2534","fatMin":""},{"cod":31,"empresa":"MARLUVAS","vendedor":"","telefone":"","fatMin":"3500"},{"cod":32,"empresa":"J&G","vendedor":"Deivis","telefone":"55 34 9842-6327","fatMin":"700"},{"cod":33,"empresa":"PAMPA","vendedor":"Josué","telefone":"55 91 9151-0220","fatMin":""},{"cod":34,"empresa":"ALLTEC","vendedor":"Junior","telefone":"55 11 97383-4822","fatMin":"500"},{"cod":35,"empresa":"SÃO MANOEL","vendedor":"JOSUÉ","telefone":"55 91 9151-0220","fatMin":""}],"pedidos":[],"solicitacoes":[]};
-
-// ── CALENDARIO ────────────────────────────────────────────────────────────────
-const STORAGE_PED_V2 = "pedidos_v2";
-const STORAGE_SOL_V2 = "solicitacoes_v1";
-const STORAGE_CAL_V1 = "calendario_compras_v1";
 
 const CALENDARIO_DEFAULT = {
   seg: ["PLASTCOR","STEELFLEX","MEDIX","VINILSEG"],
@@ -1343,31 +1309,9 @@ function CalendarioCompras({grupos, sheetsUrl}){
   );
 }
 
-// ── PEDIDOS TAB ───────────────────────────────────────────────────────────────
-function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, highlightPedido, onHighlightPedidoDone, gruposApp, setGruposApp}) {
-  // grupos vive no App para poder ser sincronizado entre abas
-  // Usamos useState local como cache — setGruposApp sincroniza com o App
-  const [grupos, setGruposLocal] = useState(gruposApp||[]);
-  const loadedRef = useRef(false);
-
-  // Sincroniza quando App muda externamente (ex: onChegouSync) — mas só se não foi a própria PedidosTab que mudou
-  const isInternalUpdate = useRef(false);
-  useEffect(()=>{
-    if(isInternalUpdate.current){ isInternalUpdate.current=false; return; }
-    if(gruposApp&&gruposApp.length>0){
-      setGruposLocal(gruposApp);
-    }
-  },[gruposApp]);
-
-  const setGrupos = (updater)=>{
-    setGruposLocal(prev=>{
-      const next = typeof updater==="function" ? updater(prev) : updater;
-      isInternalUpdate.current = true;
-      if(setGruposApp) setGruposApp(next);
-      return next;
-    });
-  };
-  const loadedRef = useRef(false);
+function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, highlightPedido, onHighlightPedidoDone, onChegouApply}) {
+  const [grupos, setGrupos] = useState([]);
+  const loadedRef = useRef(false); // ← APENAS UMA DECLARAÇÃO (bug corrigido)
   const [syncPed, setSyncPed] = useState("idle");
   const [solicitacoes, setSolicitacoes] = useState([]);
   const solLoaded = useRef(false);
@@ -1386,7 +1330,14 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
   const showToast = (m) => { setToast(m); setTimeout(()=>setToast(null),3500); };
   const pedidoRefs=useRef({});
 
-  // Helper: compara NF ignorando série (ex: "262691/1" bate com "262691")
+  useEffect(()=>{
+    if(!onChegouApply)return;
+    setGrupos(prev=>prev.map(g=>{
+      const gBase=(g.nf||"").split("/")[0].trim();
+      return gBase===onChegouApply.nfBase?{...g,chegouDia:onChegouApply.chegou}:g;
+    }));
+  },[onChegouApply]);
+
   const nfMatch=(nfA,nfB)=>{
     if(!nfA||!nfB)return false;
     const a=nfA.split("/")[0].trim();
@@ -1394,7 +1345,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     return a===b;
   };
 
-  // Highlight: Passo 1 — quando highlightPedido chega, muda sub e busca
   useEffect(()=>{
     if(!highlightPedido)return;
     const g=grupos.find(x=>x.nf&&nfMatch(x.nf,highlightPedido));
@@ -1406,7 +1356,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     }
   },[highlightPedido,grupos]);
 
-  // Highlight: Passo 2 — depois que search sincronizou, scrolla e pisca o card
   useEffect(()=>{
     if(!highlightPedido)return;
     if(search!==highlightPedido)return;
@@ -1444,7 +1393,7 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
         if(cloud&&cloud.length>0){loadedRef.current=true;setGrupos(cloud);setSyncPed("ok");setTimeout(()=>setSyncPed("idle"),2500);return;}
       }
       try{const s=localStorage.getItem(STORAGE_PED_V2);if(s){const d=JSON.parse(s);if(d&&d.length>0){loadedRef.current=true;setGrupos(d);return;}}}catch{}
-      loadedRef.current=true; // não seta vazio — só marca como carregado
+      loadedRef.current=true;
       setSyncPed("idle");
     }
     async function initSol(){
@@ -1457,7 +1406,7 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
 
   useEffect(()=>{
     if(!loadedRef.current)return;
-    if(grupos.length===0)return; // nunca salva vazio
+    if(grupos.length===0)return;
     try{localStorage.setItem(STORAGE_PED_V2,JSON.stringify(grupos));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_PED_V2,grupos);
   },[grupos]);
@@ -1503,7 +1452,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
 
   const updG=(gid,field,value)=>{
     setGrupos(prev=>prev.map(g=>g._gid===gid?{...g,[field]:value}:g));
-    // Quando chegouDia muda, sincroniza NF-e e Fretes
     if(field==="chegouDia"){
       const g=grupos.find(x=>x._gid===gid);
       if(g&&g.nf){
@@ -1564,7 +1512,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
 
   const iSt={background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 7px",color:"#e2e8f0",fontSize:12};
 
-  // ── MODIFICAÇÃO: CotacaoBadge sem mudanças
   const CotacaoBadge=({g})=>{
     const[editLink,setEditLink]=useState(false);
     const[draftLink,setDraftLink]=useState(g.linkCotacao||"");
@@ -1623,7 +1570,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     );
   };
 
-  // ── MODIFICAÇÃO: NfField agora chama navegarParaNF ao clicar no badge da NF
   const NfField=({g})=>{
     const[ed,setEd]=useState(false);
     const[draft,setDraft]=useState(g.nf||"");
@@ -1654,7 +1600,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
       );
     }
 
-    // ── MODIFICAÇÃO: ao clicar no número da NF, navega para aba NF-e com destaque
     return(
       <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
         <button
@@ -1679,7 +1624,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
           {nfVinc&&<span style={{fontSize:9,color:"#4ade80"}}>✓NF-e</span>}
           <span style={{fontSize:9,color:"#475569",borderLeft:"1px solid #2a2a2a",paddingLeft:5}}>↗</span>
         </button>
-        {/* Botão separado para editar o número */}
         <button onClick={()=>{setDraft(g.nf);setEd(true);}}
           style={{background:"transparent",border:"1px solid #1a2a3a",borderRadius:5,padding:"2px 6px",color:"#334155",fontSize:10,cursor:"pointer"}}
           title="Editar número da NF">✏️</button>
@@ -1722,7 +1666,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
         </div>
       )}
 
-      {/* Banner de destaque quando veio da aba NF-e */}
       {highlightPedido&&sub!=="solicitacoes"&&(
         <div style={{display:"flex",alignItems:"center",gap:10,background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"8px 16px",marginBottom:14,fontSize:13}}>
           <span style={{fontSize:18}}>📦</span>
@@ -1833,7 +1776,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                       <ChegouInput value={g.faturouDia} onSave={v=>updG(g._gid,"faturouDia",v)}/>
                     </div>
                     <span style={{color:"#2a2a2a",fontSize:18,flexShrink:0}}>→</span>
-                    {/* ── MODIFICAÇÃO: NfField com navegarParaNF ── */}
                     <div style={{display:"flex",flexDirection:"column",gap:2}}>
                       <span style={{fontSize:9,color:"#475569",textTransform:"uppercase"}}>NF-e</span>
                       <NfField g={g}/>
@@ -1888,7 +1830,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                         const iStyle={background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:4,padding:"3px 6px",fontSize:11,outline:"none",width:"100%",boxSizing:"border-box"};
                         return(
                           <div>
-                            {/* Cabeçalho da tabela com botão editar */}
                             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                               <span style={{color:"#475569",fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>
                                 📦 Itens do Pedido <span style={{color:"#555",fontWeight:400}}>({itens.length})</span>
