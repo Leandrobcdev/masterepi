@@ -818,7 +818,9 @@ function App(){
       if(localNfs.length>0)setNfs(localNfs);
       if(localFr.length>0)setFretes(localFr);
 
-      if(sheetsUrl){
+      const justRestored=sessionStorage.getItem("backup_just_restored");
+      if(justRestored){sessionStorage.removeItem("backup_just_restored");}
+      if(sheetsUrl&&!justRestored){
         setSyncStatus("syncing");setSyncMsg("Sincronizando com a nuvem...");
         try{
           const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
@@ -883,32 +885,41 @@ function App(){
     const file=e.target.files[0];
     if(!file)return;
     const reader=new FileReader();
-    reader.onload=ev=>{
+    reader.onload=async ev=>{
       try{
         const backup=JSON.parse(ev.target.result);
         if(!backup.versao)throw new Error("Arquivo inválido");
+        const saves=[];
         if(backup.nfs?.length>0){
           localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));
           setNfs(backup.nfs);
-          if(sheetsUrl)cloudSave(STORAGE_NF,backup.nfs);
+          if(sheetsUrl)saves.push(cloudSave(STORAGE_NF,backup.nfs));
         }
         if(backup.fretes?.length>0){
           localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes));
           setFretes(backup.fretes);
-          if(sheetsUrl)cloudSave(STORAGE_FR,backup.fretes);
+          if(sheetsUrl)saves.push(cloudSave(STORAGE_FR,backup.fretes));
         }
         if(backup.pedidos?.length>0){
           localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos));
-          if(sheetsUrl)cloudSave(STORAGE_PED_V2,backup.pedidos);
+          if(sheetsUrl)saves.push(cloudSave(STORAGE_PED_V2,backup.pedidos));
         }
         if(backup.solicitacoes?.length>0){
           localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes));
-          if(sheetsUrl)cloudSave(STORAGE_SOL_V2,backup.solicitacoes);
+          if(sheetsUrl)saves.push(cloudSave(STORAGE_SOL_V2,backup.solicitacoes));
         }
         if(backup.calendario&&Object.keys(backup.calendario).length>0){
           localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario));
-          if(sheetsUrl)cloudSave(STORAGE_CAL_V1,backup.calendario);
+          if(sheetsUrl)saves.push(cloudSave(STORAGE_CAL_V1,backup.calendario));
         }
+        // Aguarda todos os saves na nuvem antes de recarregar,
+        // evitando que a sincronização inicial sobrescreva os dados restaurados
+        if(saves.length>0){
+          try{await Promise.all(saves);}catch{}
+        }
+        // Sinaliza para o próximo carregamento que é uma restauração de backup
+        // e não deve sobrescrever com dados da nuvem
+        sessionStorage.setItem("backup_just_restored","1");
         alert(`✅ Backup restaurado com sucesso!\nData do backup: ${backup.data}\nNFs: ${backup.nfs?.length||0} | Fretes: ${backup.fretes?.length||0} | Pedidos: ${backup.pedidos?.length||0}\n\nRecarregando a página...`);
         setTimeout(()=>window.location.reload(),800);
       }catch(err){
@@ -1108,7 +1119,8 @@ function CalendarioCompras({grupos, sheetsUrl}){
 
   useEffect(()=>{
     async function init(){
-      if(sheetsUrl){
+      const justRestored=sessionStorage.getItem("backup_just_restored");
+      if(sheetsUrl&&!justRestored){
         const c=await cloudLoad(STORAGE_CAL_V1);
         if(c){setCal(c);setLoaded(true);return;}
       }
@@ -1412,7 +1424,8 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
   useEffect(()=>{
     loadedRef.current=false;
     async function init(){
-      if(sheetsUrl){
+      const justRestored=sessionStorage.getItem("backup_just_restored");
+      if(sheetsUrl&&!justRestored){
         setSyncPed("syncing");
         const cloud=await cloudLoad(STORAGE_PED_V2);
         if(cloud&&cloud.length>0){loadedRef.current=true;setGrupos(cloud);setSyncPed("ok");setTimeout(()=>setSyncPed("idle"),2500);return;}
@@ -1422,7 +1435,8 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
       setSyncPed("idle");
     }
     async function initSol(){
-      if(sheetsUrl){const c=await cloudLoad(STORAGE_SOL_V2);if(c){solLoaded.current=true;setSolicitacoes(c);return;}}
+      const justRestored=sessionStorage.getItem("backup_just_restored");
+      if(sheetsUrl&&!justRestored){const c=await cloudLoad(STORAGE_SOL_V2);if(c){solLoaded.current=true;setSolicitacoes(c);return;}}
       try{const s=localStorage.getItem(STORAGE_SOL_V2);if(s){solLoaded.current=true;setSolicitacoes(JSON.parse(s));return;}}catch{}
       solLoaded.current=true;setSolicitacoes(PLANILHA_DATA.solicitacoes||[]);
     }
