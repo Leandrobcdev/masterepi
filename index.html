@@ -820,17 +820,13 @@ function App(){
         setSyncStatus("syncing");setSyncMsg("Sincronizando com a nuvem...");
         try{
           const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
-          if(cnf&&Array.isArray(cnf)&&cnf.length>0){
-            if(cnf.length>localNfs.length){
-              setNfs(cnf);
-              try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
-            }
+          if(cnf&&Array.isArray(cnf)){
+            setNfs(cnf);
+            try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
           }
-          if(cfr&&Array.isArray(cfr)&&cfr.length>0){
-            if(cfr.length>localFr.length){
-              setFretes(cfr);
-              try{localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));}catch{}
-            }
+          if(cfr&&Array.isArray(cfr)){
+            setFretes(cfr);
+            try{localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));}catch{}
           }
           setSyncStatus("ok");setSyncMsg("Sincronizado ✓");
         }catch{
