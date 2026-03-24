@@ -1122,16 +1122,18 @@ function CalendarioCompras({grupos, sheetsUrl}){
       const justRestored=sessionStorage.getItem("backup_just_restored");
       if(sheetsUrl&&!justRestored){
         const c=await cloudLoad(STORAGE_CAL_V1);
-        if(c){setCal(c);setLoaded(true);return;}
+        if(c&&Object.keys(c).length>0){setCal(c);setLoaded(true);return;}
       }
-      try{const s=localStorage.getItem(STORAGE_CAL_V1);if(s){setCal(JSON.parse(s));setLoaded(true);return;}}catch{}
-      setLoaded(true);
+      try{const s=localStorage.getItem(STORAGE_CAL_V1);if(s){const p=JSON.parse(s);if(p&&Object.keys(p).length>0){setCal(p);setLoaded(true);return;}}}catch{}
+      // Sem dados reais — carrega padrão mas não permite salvar na nuvem
+      setLoaded(false);
     }
     init();
   },[sheetsUrl]);
 
   useEffect(()=>{
     if(!loaded)return;
+    if(!cal||Object.keys(cal).length===0)return;
     try{localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(cal));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_CAL_V1,cal);
   },[cal,loaded]);
@@ -1139,11 +1141,13 @@ function CalendarioCompras({grupos, sheetsUrl}){
   const addMarca=(dia)=>{
     const m=novaMarca.trim().toUpperCase();
     if(!m)return;
+    setLoaded(true);
     setCal(prev=>({...prev,[dia]:[...(prev[dia]||[]),m]}));
     setNovaMarca("");
   };
 
   const removeMarca=(dia,idx)=>{
+    setLoaded(true);
     setCal(prev=>({...prev,[dia]:(prev[dia]||[]).filter((_,i)=>i!==idx)}));
   };
 
@@ -1436,9 +1440,10 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     }
     async function initSol(){
       const justRestored=sessionStorage.getItem("backup_just_restored");
-      if(sheetsUrl&&!justRestored){const c=await cloudLoad(STORAGE_SOL_V2);if(c){solLoaded.current=true;setSolicitacoes(c);return;}}
-      try{const s=localStorage.getItem(STORAGE_SOL_V2);if(s){solLoaded.current=true;setSolicitacoes(JSON.parse(s));return;}}catch{}
-      solLoaded.current=true;setSolicitacoes(PLANILHA_DATA.solicitacoes||[]);
+      if(sheetsUrl&&!justRestored){const c=await cloudLoad(STORAGE_SOL_V2);if(c&&c.length>0){solLoaded.current=true;setSolicitacoes(c);return;}}
+      try{const s=localStorage.getItem(STORAGE_SOL_V2);if(s){const d=JSON.parse(s);if(d&&d.length>0){solLoaded.current=true;setSolicitacoes(d);return;}}}catch{}
+      // Não salva PLANILHA_DATA na nuvem — apenas carrega localmente sem marcar como loaded para evitar sobrescrever dados reais
+      solLoaded.current=false;setSolicitacoes(PLANILHA_DATA.solicitacoes||[]);
     }
     init();initSol();
   },[sheetsUrl]);
@@ -1452,6 +1457,7 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
 
   useEffect(()=>{
     if(!solLoaded.current)return;
+    if(solicitacoes.length===0)return;
     try{localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(solicitacoes));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_SOL_V2,solicitacoes);
   },[solicitacoes]);
