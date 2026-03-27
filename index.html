@@ -44,10 +44,20 @@ async function cloudSave(key, value){
   try{
     const ctrl=new AbortController();
     const tid=setTimeout(()=>ctrl.abort(),10000);
-    await fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({key,value}),signal:ctrl.signal});
+    // Alterado para 'cors' para permitir que o navegador valide a resposta se possível,
+    // e simplificado o envio para garantir compatibilidade com o Apps Script.
+    const response = await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body:JSON.stringify({key,value}),
+      signal:ctrl.signal
+    });
     clearTimeout(tid);
-    return true;
-  }catch{return false;}
+    return response.ok;
+  }catch(e){
+    console.error("Erro ao salvar na nuvem:", e);
+    return false;
+  }
 }
 async function cloudLoad(key){
   const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
@@ -820,23 +830,34 @@ function App(){
 
       const justRestored=sessionStorage.getItem("backup_just_restored");
       if(justRestored){sessionStorage.removeItem("backup_just_restored");}
-      if(sheetsUrl&&!justRestored){
-        setSyncStatus("syncing");setSyncMsg("Sincronizando com a nuvem...");
-        try{
-          const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
-          if(cnf&&Array.isArray(cnf)){
-            setNfs(cnf);
-            try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
+      if(sheetsUrl && !justRestored){
+        setSyncStatus("syncing"); setSyncMsg("Sincronizando com a nuvem...");
+        async function sync(){
+          try {
+            const [cnf, cfr] = await Promise.all([cloudLoad(STORAGE_NF), cloudLoad(STORAGE_FR)]);
+            
+            // Se encontrou dados na nuvem, eles SEMPRE mandam (sobrescrevem o local vazio ou antigo)
+            if(cnf && Array.isArray(cnf)){
+              setNfs(cnf);
+              localStorage.setItem(STORAGE_NF, JSON.stringify(cnf));
+            }
+            if(cfr && Array.isArray(cfr)){
+              setFretes(cfr);
+              localStorage.setItem(STORAGE_FR, JSON.stringify(cfr));
+            }
+            
+            setSyncStatus("ok"); setSyncMsg("Sincronizado ✓");
+          } catch(e) {
+            console.error("Erro sync:", e);
+            setSyncStatus("error"); setSyncMsg("⚠️ Nuvem indisponível — usando dados locais");
           }
-          if(cfr&&Array.isArray(cfr)){
-            setFretes(cfr);
-            try{localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));}catch{}
-          }
-          setSyncStatus("ok");setSyncMsg("Sincronizado ✓");
-        }catch{
-          setSyncStatus("error");setSyncMsg("⚠️ Nuvem indisponível — usando dados locais");
+          setTimeout(()=>{ setSyncStatus("idle"); setSyncMsg(""); }, 4000);
         }
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
+        sync();
+      } else {
+        // Se não tem nuvem ou acabou de restaurar backup, usa o que está no local
+        setNfs(localNfs);
+        setFretes(localFr);
       }
       setDataLoaded(true);
     }
@@ -845,14 +866,12 @@ function App(){
 
   useEffect(()=>{
     if(!dataLoaded)return;
-    if(nfs.length===0)return;
     try{localStorage.setItem(STORAGE_NF,JSON.stringify(nfs));}catch{}
     if(sheetsUrl){cloudSave(STORAGE_NF,nfs);}
   },[nfs,dataLoaded]);
 
   useEffect(()=>{
     if(!dataLoaded)return;
-    if(fretes.length===0)return;
     try{localStorage.setItem(STORAGE_FR,JSON.stringify(fretes));}catch{}
     if(sheetsUrl){cloudSave(STORAGE_FR,fretes);}
   },[fretes,dataLoaded]);
@@ -948,28 +967,41 @@ function App(){
       alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar.");
       return;
     }
-    setSyncStatus("syncing");setSyncMsg("🔄 Sincronizando com a nuvem...");
+    if(!confirm("Isso irá substituir os dados atuais pelos dados salvos na nuvem (NFs, Fretes, Pedidos, Solicitações e Calendário). Continuar?")) return;
+    setSyncStatus("syncing");setSyncMsg("🔄 Baixando tudo da nuvem...");
     try{
-      const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
-      if(cnf&&Array.isArray(cnf)){
-        setNfs(cnf);
-        try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
+      const [cnf,cfr,cped,csol,ccal]=await Promise.all([
+        cloudLoad(STORAGE_NF),
+        cloudLoad(STORAGE_FR),
+        cloudLoad(STORAGE_PED_V2),
+        cloudLoad(STORAGE_SOL_V2),
+        cloudLoad(STORAGE_CAL_V1),
+      ]);
+      let count=0;
+      if(cnf && Array.isArray(cnf)){setNfs(cnf);localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));count++;}
+      if(cfr && Array.isArray(cfr)){setFretes(cfr);localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));count++;}
+      if(cped && Array.isArray(cped)&&cped.length>0){localStorage.setItem(STORAGE_PED_V2,JSON.stringify(cped));count++;}
+      if(csol && Array.isArray(csol)&&csol.length>0){localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(csol));count++;}
+      if(ccal && typeof ccal==="object"&&Object.keys(ccal).length>0){localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(ccal));count++;}
+      setSyncStatus("ok");
+      const needsReload=count>2; // pedidos/sol/cal atualizados → precisa reload
+      setSyncMsg(needsReload?"✅ Sincronizado! Recarregando para aplicar Pedidos...":"✅ Dados de NFs e Fretes atualizados!");
+      if(needsReload){
+        sessionStorage.setItem("backup_just_restored","1");
+        setTimeout(()=>window.location.reload(),2000);
+      }else{
+        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},3000);
       }
-      if(cfr&&Array.isArray(cfr)){
-        setFretes(cfr);
-        try{localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));}catch{}
-      }
-      setSyncStatus("ok");setSyncMsg("✅ Sincronizado com sucesso!");
     }catch(err){
-      setSyncStatus("error");setSyncMsg("❌ Erro ao sincronizar");
+      setSyncStatus("error");setSyncMsg("❌ Erro ao sincronizar: "+err.message);
+      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
     }
-    setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},3000);
   };
 
   const tabs=[{id:"pedidos",label:"📦 Pedidos",color:"#f59e0b"},{id:"nf",label:"🧾 NF-e",color:"#cc0000"},{id:"fretes",label:"🚚 Fretes",color:"#ff4444"}];
 
   const syncDot={idle:{c:"#334155",t:"Sem nuvem"},syncing:{c:"#fbbf24",t:"Sincronizando..."},ok:{c:"#4ade80",t:"Nuvem OK"},error:{c:"#f87171",t:"Erro na nuvem"}};
-  const sd=syncDot[syncStatus];
+  const sd=(syncStatus==="idle"&&isConnected)?{c:"#22c55e",t:"Nuvem conectada"}:syncDot[syncStatus];
 
   return(
     <div style={{fontFamily:"'Barlow','Segoe UI',sans-serif",background:"#0a0a0a",minHeight:"100vh",color:"#e2e8f0"}}>
@@ -1061,12 +1093,13 @@ function out(v){
           <div style={{flex:1}}>
             <p style={{margin:0,fontSize:11,color:"#888",letterSpacing:2,textTransform:"uppercase"}}>Controle Diário &nbsp;·&nbsp; Belém do Pará &nbsp;·&nbsp; {today()}</p>
           </div>
-          <button onClick={forceSync} title="Sincronizar dados agora" style={{background:"#141414",border:"1px solid #cc0000",borderRadius:8,padding:"8px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:"#ff9999",fontSize:12,fontWeight:600,marginRight:8}}>
+          {syncMsg&&<span style={{fontSize:12,color:syncStatus==="ok"?"#4ade80":syncStatus==="error"?"#f87171":"#fbbf24",fontWeight:600,background:"#141414",border:"1px solid #2a2a2a",borderRadius:8,padding:"6px 12px",whiteSpace:"nowrap"}}>{syncMsg}</span>}
+          <button onClick={forceSync} title="Sincronizar todos os dados agora" style={{background:"#141414",border:"1px solid #cc0000",borderRadius:8,padding:"8px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:"#ff9999",fontSize:12,fontWeight:600,marginRight:8}}>
             <span style={{animation:syncStatus==="syncing"?"spin 1s linear infinite":"none"}}>🔄</span>
             Sincronizar
           </button>
           <button onClick={()=>setShowSettings(true)} title={sd.t} style={{background:"#141414",border:`1px solid ${isConnected?"#cc0000":"#2a2a2a"}`,borderRadius:8,padding:"8px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:isConnected?"#fff":"#555",fontSize:12,fontWeight:600}}>
-            <span style={{width:10,height:10,borderRadius:"50%",background:sd.c,display:"inline-block",boxShadow:syncStatus==="syncing"?"0 0 8px #fbbf24":"none"}}/>
+            <span style={{width:10,height:10,borderRadius:"50%",background:sd.c,display:"inline-block",boxShadow:syncStatus==="syncing"?"0 0 8px #fbbf24":isConnected&&syncStatus==="idle"?"0 0 6px #22c55e":"none"}}/>
             {isConnected?"☁️ Nuvem":"☁️ Configurar Nuvem"}
           </button>
         </div>
