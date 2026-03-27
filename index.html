@@ -102,36 +102,29 @@ const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbzqg_7D_g6ndSs
 
 async function cloudSave(key, value){
   const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
-  if(!url){
-    console.warn("⚠️ URL do Google Sheets não configurada");
-    return false;
-  }
+  if(!url)return false;
   try{
-    console.log(`📤 Enviando dados para nuvem - Key: ${key}, Size: ${JSON.stringify(value).length} bytes`);
     const ctrl=new AbortController();
     const tid=setTimeout(()=>ctrl.abort(),15000);
-    
-    const payload = JSON.stringify({key,value});
-    
-    // Usando no-cors para compatibilidade com Apps Script
-    const response = await fetch(url,{
+    // CORREÇÃO: form-urlencoded funciona com CORS do Apps Script
+    const body=new URLSearchParams({key:key,value:JSON.stringify(value)});
+    const response=await fetch(url,{
       method:"POST",
-      mode:"no-cors", // CRÍTICO para Google Apps Script
-      headers:{"Content-Type":"application/json"},
-      body:payload,
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:body.toString(),
       signal:ctrl.signal
     });
     clearTimeout(tid);
-    
-    // Com no-cors, response.ok sempre será false, então consideramos sucesso se não houver erro
-    console.log("✅ Requisição enviada com sucesso para Google Sheets");
-    return true;
+    if(!response.ok){console.error("HTTP erro:",response.status);return false;}
+    const text=await response.text();
+    console.log("✅ cloudSave ok - key:",key);
+    return text==="ok"||text.includes("ok");
   }catch(e){
-    console.error("❌ Erro ao salvar na nuvem:", e);
-    console.error("Details:", e.message, e.stack);
+    console.error("❌ cloudSave erro:",e.message);
     return false;
   }
 }
+ 
 async function cloudLoad(key){
   const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
   if(!url){
