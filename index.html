@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
@@ -30,7 +30,56 @@ select option{background:#1a1a1a;color:#e2e8f0;}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-// ===== AUTO-SAVE ENHANCEMENTS =====
+
+// ===== URL DO APPS SCRIPT JÁ EMBUTIDA =====
+const DEFAULT_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxKFZUGmjhf_RPXS4WDJNdRCnF2mxrZdwFm7UdunRaWeP33zwMtF9Qf_T0cuj8arQ6a/exec";
+
+// ===== FUNÇÃO CLOUDSAVE CORRIGIDA (sem no-cors) =====
+async function cloudSave(key, value) {
+  const url = localStorage.getItem("sheets_url_v1") || DEFAULT_SHEETS_URL;
+  if (!url) return false;
+  
+  try {
+    // Usa x-www-form-urlencoded que funciona melhor com Apps Script
+    const formData = new URLSearchParams();
+    formData.append("key", key);
+    formData.append("value", JSON.stringify(value));
+    
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData.toString()
+    });
+    
+    if (!response.ok) return false;
+    const text = await response.text();
+    return text === "ok" || text.includes("ok");
+  } catch (e) {
+    console.error("Erro ao salvar na nuvem:", e);
+    return false;
+  }
+}
+
+// ===== FUNÇÃO CLOUDLOAD CORRIGIDA =====
+async function cloudLoad(key) {
+  const url = localStorage.getItem("sheets_url_v1") || DEFAULT_SHEETS_URL;
+  if (!url) return null;
+  
+  try {
+    const response = await fetch(`${url}?key=${encodeURIComponent(key)}&ts=${Date.now()}`);
+    if (!response.ok) return null;
+    const text = await response.text();
+    if (!text || text === "null" || text.trim() === "") return null;
+    return JSON.parse(text);
+  } catch (e) {
+    console.error("Erro ao carregar da nuvem:", e);
+    return null;
+  }
+}
+
+// ===== AUTO-SAVE =====
 function useAutoSave(key, value, debounceMs = 800) {
   const debounceTimerRef = useRef(null);
   const [status, setStatus] = useState("idle");
@@ -44,28 +93,19 @@ function useAutoSave(key, value, debounceMs = 800) {
 
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        // Sempre salva no localStorage primeiro
         localStorage.setItem(key, JSON.stringify(value));
-        console.log(`💾 Salvo no localStorage - Key: ${key}`);
-        
-        // Tenta salvar na nuvem se URL estiver configurada
-        if (sheetsUrl && typeof cloudSave === 'function') {
-          console.log(`☁️ Tentando sincronizar com Google Sheets...`);
-          const success = await cloudSave(key, value);
-          if (success) {
-            console.log(`✅ Sincronizado com Google Sheets - Key: ${key}`);
-            setStatus("saved");
-          } else {
-            console.warn(`⚠️ Falha ao sincronizar com Google Sheets - Key: ${key}`);
-            setStatus("error");
+        if (sheetsUrl || DEFAULT_SHEETS_URL) {
+          const urlToUse = sheetsUrl || DEFAULT_SHEETS_URL;
+          // Salva temporariamente a URL se não estiver configurada
+          if (!sheetsUrl) {
+            localStorage.setItem("sheets_url_v1", DEFAULT_SHEETS_URL);
           }
-        } else {
-          console.log("📍 Salvamento local apenas (URL do Sheets não configurada)");
-          setStatus("saved");
+          await cloudSave(key, value);
         }
+        setStatus("saved");
         setTimeout(() => setStatus("idle"), 2000);
       } catch (err) {
-        console.error("❌ Erro no auto-save:", err);
+        console.error("Auto-save error:", err);
         setStatus("error");
         setTimeout(() => setStatus("idle"), 3000);
       }
@@ -98,56 +138,7 @@ const STORAGE_SHEETS_URL="sheets_url_v1";
 const STORAGE_PED_V2 = "pedidos_v2";
 const STORAGE_SOL_V2 = "solicitacoes_v1";
 const STORAGE_CAL_V1 = "calendario_compras_v1";
-const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbzqg_7D_g6ndSs3xQ5Yn36m0b_uoAD1RlCgOzJJwGfLdOu8RU7lePVQQD9U1wFB96Xr/exec";
 
-async function cloudSave(key, value){
-  const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
-  if(!url)return false;
-  try{
-    const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),15000);
-    // CORREÇÃO: form-urlencoded funciona com CORS do Apps Script
-    const body=new URLSearchParams({key:key,value:JSON.stringify(value)});
-    const response=await fetch(url,{
-      method:"POST",
-      headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:body.toString(),
-      signal:ctrl.signal
-    });
-    clearTimeout(tid);
-    if(!response.ok){console.error("HTTP erro:",response.status);return false;}
-    const text=await response.text();
-    console.log("✅ cloudSave ok - key:",key);
-    return text==="ok"||text.includes("ok");
-  }catch(e){
-    console.error("❌ cloudSave erro:",e.message);
-    return false;
-  }
-}
- 
-async function cloudLoad(key){
-  const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
-  if(!url){
-    console.warn("⚠️ URL do Google Sheets não configurada para carregamento");
-    return null;
-  }
-  try{
-    console.log(`📥 Carregando dados da nuvem - Key: ${key}`);
-    const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),15000);
-    const r=await fetch(`${url}?key=${encodeURIComponent(key)}&ts=${Date.now()}`,{signal:ctrl.signal});
-    clearTimeout(tid);
-    const text=await r.text();
-    console.log(`📦 Dados recebidos - Size: ${text.length} bytes`);
-    if(!text||text==="null"||text.trim()==="")return null;
-    const parsed = JSON.parse(text);
-    console.log("✅ Dados carregados com sucesso da nuvem");
-    return parsed;
-  }catch(e){
-    console.error("❌ Erro ao carregar da nuvem:", e);
-    return null;
-  }
-}
 const LOGO_SRC="data:image/png;base64,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";
 
 function today(){return new Date().toLocaleDateString("pt-BR");}
@@ -332,7 +323,7 @@ function DanfeModal({nf,onClose}){
                     {["#","Código","Descrição","NCM","CFOP","Un","Qtd","V.Unit","V.Total","Pedido"].map(h=>(
                       <th key={h} style={{border:"1px solid #ccc",padding:"3px 5px",textAlign:"left",fontSize:9}}>{h}</th>
                     ))}
-                  </tr>
+                   </tr>
                 </thead>
                 <tbody>
                   {x.itens.map((it,i)=>(
@@ -341,17 +332,17 @@ function DanfeModal({nf,onClose}){
                       <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.codigo}</td>
                       <td style={{border:"1px solid #ccc",padding:"3px 5px",maxWidth:200}}>{it.descricao}</td>
                       <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.ncm}</td>
-                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.cfop}</td>
-                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.unid}</td>
-                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.qtd}</td>
-                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.vUnit}</td>
-                      <td style={{border:"1px solid #ccc",padding:"3px 5px",fontWeight:700}}>{it.vProd}</td>
-                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.pedido}</td>
-                    </tr>
+                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.cfop}<\/td>
+                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.unid}<\/td>
+                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.qtd}<\/td>
+                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.vUnit}<\/td>
+                      <td style={{border:"1px solid #ccc",padding:"3px 5px",fontWeight:700}}>{it.vProd}<\/td>
+                      <td style={{border:"1px solid #ccc",padding:"3px 5px"}}>{it.pedido}<\/td>
+                    <\/tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                <\/tbody>
+              <\/table>
+            <\/div>
           )}
           {x.totais&&(
             <div style={{border:"2px solid #000",marginBottom:6}}>
@@ -683,24 +674,24 @@ function NfTab({nfs,setNfs,fretes,setFretes,highlightNF,onHighlightDone,navegarP
                     <td style={{padding:"9px 12px",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={nf.emitente}>{nf.emitente}</td>
                     <td style={{padding:"9px 12px"}}>{st?<MediaBadge media={st.media} count={st.count}/>:<span style={{color:"#333",fontSize:11}}>sem histórico</span>}</td>
                     <td style={{padding:"9px 12px",color:"#34d399",fontWeight:600,whiteSpace:"nowrap"}}>{nf.valor}</td>
-                    <td style={{padding:"9px 12px"}}><input value={nf.pedido||""} onChange={e=>upd(nf.id,"pedido",e.target.value)} placeholder="Pedido..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#fbbf24",fontSize:12,width:85}}/></td>
+                    <td style={{padding:"9px 12px"}}><input value={nf.pedido||""} onChange={e=>upd(nf.id,"pedido",e.target.value)} placeholder="Pedido..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#fbbf24",fontSize:12,width:85}}/><\/td>
                     <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                       {linkedFrete?<span style={{background:"#0c2a3a",border:"1px solid #0891b2",borderRadius:6,padding:"3px 9px",color:"#38bdf8",fontWeight:700,fontSize:12}}>🚚 {linkedFrete.nf||linkedFrete.transportadora?.split(" ")[0]}</span>:<span style={{color:"#333",fontSize:12}}>—</span>}
-                    </td>
-                    <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}><ChegouInput value={nf.chegou} onSave={v=>handleChegou(nf.id,v)}/></td>
-                    <td style={{padding:"9px 12px"}}><input value={nf.obs||""} onChange={e=>upd(nf.id,"obs",e.target.value)} placeholder="Obs..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#94a3b8",fontSize:12,width:85}}/></td>
+                    <\/td>
+                    <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}><ChegouInput value={nf.chegou} onSave={v=>handleChegou(nf.id,v)}/><\/td>
+                    <td style={{padding:"9px 12px"}}><input value={nf.obs||""} onChange={e=>upd(nf.id,"obs",e.target.value)} placeholder="Obs..." style={{background:"transparent",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 8px",color:"#94a3b8",fontSize:12,width:85}}/><\/td>
                     <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                      <button onClick={()=>{setForm({...nf});setEditId(nf.id);setShowForm(true);setShowPaste(false);}} style={{background:"transparent",border:"1px solid #2a2a2a",color:"#94a3b8",padding:"4px 8px",borderRadius:6,cursor:"pointer",marginRight:4,fontSize:12}}>✏️</button>
-                      <button onClick={()=>{if(confirm("Remover?"))setNfs(prev=>prev.filter(n=>n.id!==nf.id));}} style={{background:"transparent",border:"1px solid #7f1d1d",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer",fontSize:12}}>🗑️</button>
-                    </td>
-                  </tr>
+                      <button onClick={()=>{setForm({...nf});setEditId(nf.id);setShowForm(true);setShowPaste(false);}} style={{background:"transparent",border:"1px solid #2a2a2a",color:"#94a3b8",padding:"4px 8px",borderRadius:6,cursor:"pointer",marginRight:4,fontSize:12}}>✏️<\/button>
+                      <button onClick={()=>{if(confirm("Remover?"))setNfs(prev=>prev.filter(n=>n.id!==nf.id));}} style={{background:"transparent",border:"1px solid #7f1d1d",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer",fontSize:12}}>🗑️<\/button>
+                    <\/td>
+                  <\/tr>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            <\/tbody>
+          <\/table>
+        <\/div>
       )}
-    </div>
+    <\/div>
   );
 }
 
@@ -783,20 +774,20 @@ function FretesTab({fretes,setFretes,nfs,setNfs,onChegouSync}){
           {pastePreview.length>0&&(()=>{
             const exist=new Set(fretes.map(f=>f.nf.trim()));
             const novos=pastePreview.filter(f=>!exist.has(f.nf.trim()));
-            const dups=pastePreview.filter(f=>exist.has(f.nf.trim()));
+            const dups=pastePreview.length-novos.length;
             return <div style={{marginTop:14}}>
               <p style={{margin:"0 0 8px",fontSize:13,color:"#34d399",fontWeight:600}}>✅ {novos.length} novo(s) {dups.length>0&&<span style={{color:"#f87171"}}> · ⚠️ {dups.length} duplicata(s) serão ignoradas</span>}</p>
               <div style={{overflowX:"auto",maxHeight:200,overflowY:"auto",borderRadius:8,border:"1px solid #2a2a2a"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead><tr style={{background:"#0a0a0a"}}>{["","CT-e","Emissão","Transportadora","Valor"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#555",fontWeight:600}}>{h}</th>)}</tr></thead>
-                  <tbody>{pastePreview.map((f,i)=>{const isDup=exist.has(f.nf.trim());return <tr key={i} style={{borderBottom:"1px solid #1a1a1a",opacity:isDup?0.4:1}}><td style={{padding:"6px 10px"}}>{isDup?<span style={{color:"#f87171",fontSize:11}}>DUP</span>:<span style={{color:"#34d399",fontSize:11}}>NEW</span>}</td><td style={{padding:"6px 10px",color:"#ff9999",fontWeight:600}}>{f.nf}</td><td style={{padding:"6px 10px",color:"#94a3b8"}}>{f.emissao}</td><td style={{padding:"6px 10px",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.transportadora}</td><td style={{padding:"6px 10px",color:"#34d399"}}>{f.valor}</td></tr>;})}</tbody>
-                </table>
-              </div>
+                  <thead><tr style={{background:"#0a0a0a"}}>{["","CT-e","Emissão","Transportadora","Valor"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#555",fontWeight:600}}>{h}</th>)}<\/thead>
+                  <tbody>{pastePreview.map((f,i)=>{const isDup=exist.has(f.nf.trim());return <tr key={i} style={{borderBottom:"1px solid #1a1a1a",opacity:isDup?0.4:1}}><td style={{padding:"6px 10px"}}>{isDup?<span style={{color:"#f87171",fontSize:11}}>DUP</span>:<span style={{color:"#34d399",fontSize:11}}>NEW</span>}<\/td><td style={{padding:"6px 10px",color:"#ff9999",fontWeight:600}}>{f.nf}<\/td><td style={{padding:"6px 10px",color:"#94a3b8"}}>{f.emissao}<\/td><td style={{padding:"6px 10px",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.transportadora}<\/td><td style={{padding:"6px 10px",color:"#34d399"}}>{f.valor}<\/td><\/tr>;})}<\/tbody>
+                <\/table>
+              <\/div>
               {novos.length>0&&<button onClick={handleImport} style={{marginTop:12,background:"#059669",color:"#fff",border:"none",padding:"9px 22px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>✅ Importar {novos.length} frete(s)</button>}
-            </div>;
+            <\/div>;
           })()}
           {pasteText&&pastePreview.length===0&&<p style={{color:"#f87171",fontSize:13,marginTop:10}}>⚠️ Não foi possível detectar fretes.</p>}
-        </div>
+        <\/div>
       )}
       {showForm&&(
         <div style={{background:"#141414",borderRadius:12,padding:20,marginBottom:20,border:"1px solid #2a2a2a"}}>
@@ -827,7 +818,7 @@ function FretesTab({fretes,setFretes,nfs,setNfs,onChegouSync}){
                 {["Transportadora","CT-e","NF Vinculada","Pedido","Origem → Destino","Previsão","Valor","Rastreio","Obs","Data Chegada","Status",""].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#94a3b8",fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
-              </tr>
+               </tr>
             </thead>
             <tbody>
               {filtered.map((fr,i)=>{
@@ -867,10 +858,7 @@ function App(){
   const[nfs,setNfs]=useState([]);
   const[fretes,setFretes]=useState([]);
   const [chegouApply, setChegouApply] = useState(null);
-
-  const onChegouSync=(nfBase,chegou)=>{
-    setChegouApply({nfBase, chegou, ts: Date.now()});
-  };
+  const onChegouSync=(nfBase,chegou)=>{ setChegouApply({nfBase, chegou, ts: Date.now()}); };
   const[dataLoaded,setDataLoaded]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
   const[sheetsUrl,setSheetsUrl]=useState(()=>localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL);
@@ -881,21 +869,10 @@ function App(){
   const[highlightPedido,setHighlightPedido]=useState(null);
   const nfsStatus = useAutoSave(STORAGE_NF, nfs);
   const fretesStatus = useAutoSave(STORAGE_FR, fretes);
-
   const isConnected=!!sheetsUrl;
 
-  const navegarParaNF=(nfNumero)=>{
-    setHighlightPedido(null);
-    setHighlightNF(nfNumero);
-    setTab("nf");
-  };
-
-  const navegarParaPedido=(nfNumero)=>{
-    const numBase=nfNumero.split("/")[0].trim();
-    setHighlightNF(null);
-    setHighlightPedido(numBase);
-    setTab("pedidos");
-  };
+  const navegarParaNF=(nfNumero)=>{ setHighlightPedido(null); setHighlightNF(nfNumero); setTab("nf"); };
+  const navegarParaPedido=(nfNumero)=>{ const numBase=nfNumero.split("/")[0].trim(); setHighlightNF(null); setHighlightPedido(numBase); setTab("pedidos"); };
 
   useEffect(()=>{
     setDataLoaded(false);
@@ -914,17 +891,8 @@ function App(){
         async function sync(){
           try {
             const [cnf, cfr] = await Promise.all([cloudLoad(STORAGE_NF), cloudLoad(STORAGE_FR)]);
-            
-            // Se encontrou dados na nuvem, eles SEMPRE mandam (sobrescrevem o local vazio ou antigo)
-            if(cnf && Array.isArray(cnf)){
-              setNfs(cnf);
-              localStorage.setItem(STORAGE_NF, JSON.stringify(cnf));
-            }
-            if(cfr && Array.isArray(cfr)){
-              setFretes(cfr);
-              localStorage.setItem(STORAGE_FR, JSON.stringify(cfr));
-            }
-            
+            if(cnf && Array.isArray(cnf)){ setNfs(cnf); localStorage.setItem(STORAGE_NF, JSON.stringify(cnf)); }
+            if(cfr && Array.isArray(cfr)){ setFretes(cfr); localStorage.setItem(STORAGE_FR, JSON.stringify(cfr)); }
             setSyncStatus("ok"); setSyncMsg("Sincronizado ✓");
           } catch(e) {
             console.error("Erro sync:", e);
@@ -934,7 +902,6 @@ function App(){
         }
         sync();
       } else {
-        // Se não tem nuvem ou acabou de restaurar backup, usa o que está no local
         setNfs(localNfs);
         setFretes(localFr);
       }
@@ -943,204 +910,41 @@ function App(){
     init();
   },[sheetsUrl]);
 
-  useEffect(()=>{
-    if(!dataLoaded)return;
-    try{localStorage.setItem(STORAGE_NF,JSON.stringify(nfs));}catch{}
-    if(sheetsUrl){cloudSave(STORAGE_NF,nfs);}
-  },[nfs,dataLoaded]);
+  useEffect(()=>{ if(!dataLoaded)return; try{localStorage.setItem(STORAGE_NF,JSON.stringify(nfs));}catch{} if(sheetsUrl){cloudSave(STORAGE_NF,nfs);} },[nfs,dataLoaded]);
+  useEffect(()=>{ if(!dataLoaded)return; try{localStorage.setItem(STORAGE_FR,JSON.stringify(fretes));}catch{} if(sheetsUrl){cloudSave(STORAGE_FR,fretes);} },[fretes,dataLoaded]);
 
-  useEffect(()=>{
-    if(!dataLoaded)return;
-    try{localStorage.setItem(STORAGE_FR,JSON.stringify(fretes));}catch{}
-    if(sheetsUrl){cloudSave(STORAGE_FR,fretes);}
-  },[fretes,dataLoaded]);
-
-  const saveUrl=()=>{
-    const url=urlDraft.trim();
-    localStorage.setItem(STORAGE_SHEETS_URL,url);
-    setSheetsUrl(url);
-    setShowSettings(false);
-  };
-
+  const saveUrl=()=>{ const url=urlDraft.trim(); localStorage.setItem(STORAGE_SHEETS_URL,url); setSheetsUrl(url); setShowSettings(false); };
   const exportarBackup=()=>{
-    const backup={
-      versao:"masterepi_v1",
-      data: new Date().toLocaleString("pt-BR"),
-      nfs: JSON.parse(localStorage.getItem(STORAGE_NF)||"[]"),
-      fretes: JSON.parse(localStorage.getItem(STORAGE_FR)||"[]"),
-      pedidos: JSON.parse(localStorage.getItem(STORAGE_PED_V2)||"[]"),
-      solicitacoes: JSON.parse(localStorage.getItem(STORAGE_SOL_V2)||"[]"),
-      calendario: JSON.parse(localStorage.getItem(STORAGE_CAL_V1)||"{}"),
-    };
+    const backup={ versao:"masterepi_v1", data: new Date().toLocaleString("pt-BR"), nfs: JSON.parse(localStorage.getItem(STORAGE_NF)||"[]"), fretes: JSON.parse(localStorage.getItem(STORAGE_FR)||"[]"), pedidos: JSON.parse(localStorage.getItem(STORAGE_PED_V2)||"[]"), solicitacoes: JSON.parse(localStorage.getItem(STORAGE_SOL_V2)||"[]"), calendario: JSON.parse(localStorage.getItem(STORAGE_CAL_V1)||"{}") };
     const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob);
-    a.download=`masterepi_backup_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.json`;
-    a.click();
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`masterepi_backup_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.json`; a.click();
   };
-
   const importarBackup=(e)=>{
-    const file=e.target.files[0];
-    if(!file)return;
+    const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
     reader.onload=async ev=>{
       try{
         const backup=JSON.parse(ev.target.result);
         if(!backup.versao)throw new Error("Arquivo inválido");
         const saves=[];
-        if(backup.nfs?.length>0){
-          localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));
-          setNfs(backup.nfs);
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_NF,backup.nfs));
-        }
-        if(backup.fretes?.length>0){
-          localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes));
-          setFretes(backup.fretes);
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_FR,backup.fretes));
-        }
-        if(backup.pedidos?.length>0){
-          localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos));
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_PED_V2,backup.pedidos));
-        }
-        if(backup.solicitacoes?.length>0){
-          localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes));
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_SOL_V2,backup.solicitacoes));
-        }
-        if(backup.calendario&&Object.keys(backup.calendario).length>0){
-          localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario));
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_CAL_V1,backup.calendario));
-        }
-        // Aguarda todos os saves na nuvem antes de recarregar,
-        // evitando que a sincronização inicial sobrescreva os dados restaurados
-        if(saves.length>0){
-          try{await Promise.all(saves);}catch{}
-        }
-        // Sinaliza para o próximo carregamento que é uma restauração de backup
-        // e não deve sobrescrever com dados da nuvem
+        if(backup.nfs?.length>0){ localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs)); setNfs(backup.nfs); if(sheetsUrl)saves.push(cloudSave(STORAGE_NF,backup.nfs)); }
+        if(backup.fretes?.length>0){ localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes)); setFretes(backup.fretes); if(sheetsUrl)saves.push(cloudSave(STORAGE_FR,backup.fretes)); }
+        if(backup.pedidos?.length>0){ localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos)); if(sheetsUrl)saves.push(cloudSave(STORAGE_PED_V2,backup.pedidos)); }
+        if(backup.solicitacoes?.length>0){ localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes)); if(sheetsUrl)saves.push(cloudSave(STORAGE_SOL_V2,backup.solicitacoes)); }
+        if(backup.calendario&&Object.keys(backup.calendario).length>0){ localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario)); if(sheetsUrl)saves.push(cloudSave(STORAGE_CAL_V1,backup.calendario)); }
+        if(saves.length>0){ try{await Promise.all(saves);}catch{} }
         sessionStorage.setItem("backup_just_restored","1");
         alert(`✅ Backup restaurado com sucesso!\nData do backup: ${backup.data}\nNFs: ${backup.nfs?.length||0} | Fretes: ${backup.fretes?.length||0} | Pedidos: ${backup.pedidos?.length||0}\n\nRecarregando a página...`);
         setTimeout(()=>window.location.reload(),800);
-      }catch(err){
-        alert("❌ Erro ao importar backup: "+err.message);
-      }
+      }catch(err){ alert("❌ Erro ao importar backup: "+err.message); }
     };
     reader.readAsText(file);
     e.target.value="";
   };
-
-  const testConnection=async()=>{
-    setSyncStatus("syncing");setSyncMsg("Testando conexão...");
-    const url=urlDraft.trim();
-    try{
-      const r=await fetch(`${url}?key=test`);
-      await r.text();
-      setSyncStatus("ok");setSyncMsg("Conexão OK! ✓");
-    }catch{
-      setSyncStatus("error");setSyncMsg("Falha na conexão ✗");
-    }
-    setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-  };
-
-  const forceSync=async()=>{
-    if(!sheetsUrl){
-      alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar.");
-      return;
-    }
-    if(!confirm("Isso irá substituir os dados atuais pelos dados salvos na nuvem (NFs, Fretes, Pedidos, Solicitações e Calendário). Continuar?")) return;
-    setSyncStatus("syncing");setSyncMsg("🔄 Baixando tudo da nuvem...");
-    try{
-      const [cnf,cfr,cped,csol,ccal]=await Promise.all([
-        cloudLoad(STORAGE_NF),
-        cloudLoad(STORAGE_FR),
-        cloudLoad(STORAGE_PED_V2),
-        cloudLoad(STORAGE_SOL_V2),
-        cloudLoad(STORAGE_CAL_V1),
-      ]);
-      let count=0;
-      if(cnf && Array.isArray(cnf)){setNfs(cnf);localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));count++;}
-      if(cfr && Array.isArray(cfr)){setFretes(cfr);localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));count++;}
-      if(cped && Array.isArray(cped)&&cped.length>0){localStorage.setItem(STORAGE_PED_V2,JSON.stringify(cped));count++;}
-      if(csol && Array.isArray(csol)&&csol.length>0){localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(csol));count++;}
-      if(ccal && typeof ccal==="object"&&Object.keys(ccal).length>0){localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(ccal));count++;}
-      setSyncStatus("ok");
-      const needsReload=count>2; // pedidos/sol/cal atualizados → precisa reload
-      setSyncMsg(needsReload?"✅ Sincronizado! Recarregando para aplicar Pedidos...":"✅ Dados de NFs e Fretes atualizados!");
-      if(needsReload){
-        sessionStorage.setItem("backup_just_restored","1");
-        setTimeout(()=>window.location.reload(),2000);
-      }else{
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},3000);
-      }
-    }catch(err){
-      setSyncStatus("error");setSyncMsg("❌ Erro ao sincronizar: "+err.message);
-      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-    }
-  };
-
-  const testSaveToCloud=async()=>{
-    if(!sheetsUrl){
-      alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar.");
-      return;
-    }
-    console.log("🧪 Iniciando teste de salvamento...");
-    setSyncStatus("syncing");setSyncMsg("🧪 Testando salvamento...");
-    
-    const testKey = "test_save_" + Date.now();
-    const testData = {
-      timestamp: new Date().toISOString(),
-      message: "Teste de sincronização Master EPI",
-      random: Math.random()
-    };
-    
-    try {
-      console.log("📤 Enviando dados de teste:", testKey, testData);
-      const saveSuccess = await cloudSave(testKey, testData);
-      
-      if (!saveSuccess) {
-        setSyncStatus("error");
-        setSyncMsg("❌ Erro ao salvar dados de teste");
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-        return;
-      }
-      
-      console.log("⏳ Aguardando 2 segundos antes de ler...");
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      console.log("📥 Tentando carregar dados de teste...");
-      const loadedData = await cloudLoad(testKey);
-      
-      if (!loadedData) {
-        setSyncStatus("error");
-        setSyncMsg("⚠️ Salvamento OK, mas leitura falhou. Verifique as permissões do Apps Script.");
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},5000);
-        return;
-      }
-      
-      console.log("✅ Dados carregados:", loadedData);
-      
-      if (JSON.stringify(loadedData) === JSON.stringify(testData)) {
-        setSyncStatus("ok");
-        setSyncMsg("✅ Teste completo! Salvamento e leitura funcionando!");
-        console.log("✅ TESTE PASSOU! Dados salvos e lidos corretamente.");
-      } else {
-        setSyncStatus("error");
-        setSyncMsg("⚠️ Dados foram salvos mas retornaram diferentes");
-        console.warn("⚠️ Dados salvos:", testData);
-        console.warn("⚠️ Dados lidos:", loadedData);
-      }
-      
-      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},5000);
-      
-    } catch(err) {
-      console.error("❌ Erro no teste:", err);
-      setSyncStatus("error");
-      setSyncMsg("❌ Erro no teste: " + err.message);
-      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-    }
-  };
+  const testConnection=async()=>{ setSyncStatus("syncing");setSyncMsg("Testando conexão..."); const url=urlDraft.trim(); try{ const r=await fetch(`${url}?key=test`); await r.text(); setSyncStatus("ok");setSyncMsg("Conexão OK! ✓"); }catch{ setSyncStatus("error");setSyncMsg("Falha na conexão ✗"); } setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000); };
+  const forceSync=async()=>{ if(!sheetsUrl){ alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar."); return; } if(!confirm("Isso irá substituir os dados atuais pelos dados salvos na nuvem (NFs, Fretes, Pedidos, Solicitações e Calendário). Continuar?")) return; setSyncStatus("syncing");setSyncMsg("🔄 Baixando tudo da nuvem..."); try{ const [cnf,cfr,cped,csol,ccal]=await Promise.all([ cloudLoad(STORAGE_NF), cloudLoad(STORAGE_FR), cloudLoad(STORAGE_PED_V2), cloudLoad(STORAGE_SOL_V2), cloudLoad(STORAGE_CAL_V1) ]); let count=0; if(cnf && Array.isArray(cnf)){setNfs(cnf);localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));count++;} if(cfr && Array.isArray(cfr)){setFretes(cfr);localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));count++;} if(cped && Array.isArray(cped)&&cped.length>0){localStorage.setItem(STORAGE_PED_V2,JSON.stringify(cped));count++;} if(csol && Array.isArray(csol)&&csol.length>0){localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(csol));count++;} if(ccal && typeof ccal==="object"&&Object.keys(ccal).length>0){localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(ccal));count++;} setSyncStatus("ok"); const needsReload=count>2; setSyncMsg(needsReload?"✅ Sincronizado! Recarregando para aplicar Pedidos...":"✅ Dados de NFs e Fretes atualizados!"); if(needsReload){ sessionStorage.setItem("backup_just_restored","1"); setTimeout(()=>window.location.reload(),2000); }else{ setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},3000); } }catch(err){ setSyncStatus("error");setSyncMsg("❌ Erro ao sincronizar: "+err.message); setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000); } };
 
   const tabs=[{id:"pedidos",label:"📦 Pedidos",color:"#f59e0b"},{id:"nf",label:"🧾 NF-e",color:"#cc0000"},{id:"fretes",label:"🚚 Fretes",color:"#ff4444"}];
-
   const syncDot={idle:{c:"#334155",t:"Sem nuvem"},syncing:{c:"#fbbf24",t:"Sincronizando..."},ok:{c:"#4ade80",t:"Nuvem OK"},error:{c:"#f87171",t:"Erro na nuvem"}};
   const sd=(syncStatus==="idle"&&isConnected)?{c:"#22c55e",t:"Nuvem conectada"}:syncDot[syncStatus];
 
@@ -1203,14 +1007,11 @@ function out(v){
             </div>
             <div style={{marginBottom:14}}>
               <label style={{color:"#94a3b8",fontSize:12,display:"block",marginBottom:6}}>URL do Apps Script:</label>
-              <input value={urlDraft} onChange={e=>setUrlDraft(e.target.value)}
-                placeholder="https://script.google.com/macros/s/..."
-                style={{width:"100%",background:"#0a0a0a",border:"1px solid #334155",borderRadius:8,padding:"10px 14px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"}}/>
+              <input value={urlDraft} onChange={e=>setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/..." style={{width:"100%",background:"#0a0a0a",border:"1px solid #334155",borderRadius:8,padding:"10px 14px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"}}/>
             </div>
             {syncMsg&&<p style={{fontSize:12,color:syncStatus==="ok"?"#4ade80":syncStatus==="error"?"#f87171":"#fbbf24",marginBottom:12}}>{syncMsg}</p>}
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <button onClick={testConnection} style={{background:"#1e293b",color:"#94a3b8",border:"1px solid #334155",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>🔗 Testar conexão</button>
-              <button onClick={testSaveToCloud} style={{background:"#1c1200",color:"#fbbf24",border:"1px solid #ca8a04",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>🧪 Testar salvamento</button>
               <button onClick={saveUrl} style={{background:"#cc0000",color:"#fff",border:"none",padding:"9px 20px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>💾 Salvar e conectar</button>
               {sheetsUrl&&<button onClick={()=>{localStorage.removeItem(STORAGE_SHEETS_URL);setSheetsUrl("");setUrlDraft("");setShowSettings(false);}} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12}}>Desconectar</button>}
               <button onClick={()=>setShowSettings(false)} style={{background:"transparent",color:"#555",border:"1px solid #2a2a2a",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12,marginLeft:"auto"}}>Fechar</button>
@@ -1301,7 +1102,6 @@ function CalendarioCompras({grupos, sheetsUrl}){
         if(c&&Object.keys(c).length>0){setCal(c);setLoaded(true);return;}
       }
       try{const s=localStorage.getItem(STORAGE_CAL_V1);if(s){const p=JSON.parse(s);if(p&&Object.keys(p).length>0){setCal(p);setLoaded(true);return;}}}catch{}
-      // Sem dados reais — carrega padrão mas não permite salvar na nuvem
       setLoaded(false);
     }
     init();
@@ -1425,21 +1225,21 @@ function CalendarioCompras({grupos, sheetsUrl}){
                       {g.itens&&g.itens.length>0&&(
                         <div style={{overflowX:"auto"}}>
                           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                            <thead><tr style={{borderBottom:"1px solid #16a34a"}}>{["Cód","Descrição","Qtd","Saldo"].map(h=><th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#4ade80",fontWeight:600}}>{h}</th>)}</tr></thead>
+                            <thead><tr style={{borderBottom:"1px solid #16a34a"}}>{["Cód","Descrição","Qtd","Saldo"].map(h=><th key={h} style={{padding:"4px 8px",textAlign:"left",color:"#4ade80",fontWeight:600}}>{h}</th>)}<\/thead>
                             <tbody>{g.itens.map((it,j)=>(
                               <tr key={j} style={{borderBottom:"1px solid #0a2a0a"}}>
-                                <td style={{padding:"4px 8px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>{it.cod}</td>
-                                <td style={{padding:"4px 8px",color:"#e2e8f0",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao}</td>
-                                <td style={{padding:"4px 8px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}</td>
-                                <td style={{padding:"4px 8px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}</td>
-                              </tr>
-                            ))}</tbody>
-                          </table>
-                        </div>
+                                <td style={{padding:"4px 8px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>{it.cod}<\/td>
+                                <td style={{padding:"4px 8px",color:"#e2e8f0",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao}<\/td>
+                                <td style={{padding:"4px 8px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}<\/td>
+                                <td style={{padding:"4px 8px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}<\/td>
+                              <\/tr>
+                            ))}<\/tbody>
+                          <\/table>
+                        <\/div>
                       )}
-                    </div>
+                    <\/div>
                   ))}
-                </div>
+                <\/div>
               )}
               <div style={{padding:"14px 20px",overflowY:"auto",flex:1}}>
                 <div style={{color:"#94a3b8",fontWeight:700,fontSize:12,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>📋 Histórico Completo</div>
@@ -1528,7 +1328,7 @@ function CalendarioCompras({grupos, sheetsUrl}){
 
 function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, highlightPedido, onHighlightPedidoDone, onChegouApply}) {
   const [grupos, setGrupos] = useState([]);
-  const loadedRef = useRef(false); // ← APENAS UMA DECLARAÇÃO (bug corrigido)
+  const loadedRef = useRef(false);
   const [syncPed, setSyncPed] = useState("idle");
   const [solicitacoes, setSolicitacoes] = useState([]);
   const solLoaded = useRef(false);
@@ -1621,7 +1421,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
       const justRestored=sessionStorage.getItem("backup_just_restored");
       if(sheetsUrl&&!justRestored){const c=await cloudLoad(STORAGE_SOL_V2);if(c&&c.length>0){solLoaded.current=true;setSolicitacoes(c);return;}}
       try{const s=localStorage.getItem(STORAGE_SOL_V2);if(s){const d=JSON.parse(s);if(d&&d.length>0){solLoaded.current=true;setSolicitacoes(d);return;}}}catch{}
-      // Não salva PLANILHA_DATA na nuvem — apenas carrega localmente sem marcar como loaded para evitar sobrescrever dados reais
       solLoaded.current=false;setSolicitacoes(PLANILHA_DATA.solicitacoes||[]);
     }
     init();initSol();
@@ -1629,14 +1428,12 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
 
   useEffect(()=>{
     if(!loadedRef.current)return;
-    // if(grupos.length===0)return;
     try{localStorage.setItem(STORAGE_PED_V2,JSON.stringify(grupos));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_PED_V2,grupos);
   },[grupos]);
 
   useEffect(()=>{
     if(!solLoaded.current)return;
-    // if(solicitacoes.length===0)return;
     try{localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(solicitacoes));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_SOL_V2,solicitacoes);
   },[solicitacoes]);
@@ -1645,27 +1442,20 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     raw=raw.replace(/__ABRIR PDF__/gi,'').replace(/[🟢🔴🟠🟡⚫⚪🔵🟣✅❌⚠️]/g,'').trim();
     const items=[];
     for(const line of raw.split('\n').map(l=>l.trim()).filter(Boolean)){
-      // Tenta capturar a data no início (ex: 06/03/2026)
       const dataMatch = line.match(/^(\d{2}\/\d{2}\/\d{4})/);
       const dataSolicitacao = dataMatch ? dataMatch[1] : "";
-      
-      // Remove a data da linha para processar o resto
       const cleanLine = line.replace(/^\d{2}\/\d{2}\/\d{4}\s*/, '').trim();
       const cols = cleanLine.split('\t');
-      
       if(cols.length >= 2){
         const cod = cols[0]?.trim() || '';
         const desc = cols[1]?.trim() || '';
         const qtd = cols[2]?.trim() || '';
-        const vlr = cols[4]?.trim() || cols[3]?.trim() || ''; // Tenta pegar o valor na 5ª ou 4ª coluna
+        const vlr = cols[4]?.trim() || cols[3]?.trim() || '';
         if(cod && desc) {
           items.push({dataSolicitacao, cod, descricao: desc, qtdSugerida: qtd, vlrUnit: vlr, saldoEstoque: ""});
           continue;
         }
       }
-      
-      // Fallback para linhas sem TAB (exemplo enviado pelo usuário)
-      // 06/03/2026 6539 SAP MOOV EVA BRANCO N.37 - CA 52380 24
       const m = cleanLine.match(/^(\d{3,10})\s+(.+?)\s+(\d+[\d,.]*)$/);
       if(m) {
         items.push({dataSolicitacao, cod: m[1], descricao: m[2].trim(), qtdSugerida: m[3], vlrUnit: '', saldoEstoque: ''});
