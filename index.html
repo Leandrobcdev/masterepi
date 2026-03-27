@@ -44,14 +44,28 @@ function useAutoSave(key, value, debounceMs = 800) {
 
     debounceTimerRef.current = setTimeout(async () => {
       try {
+        // Sempre salva no localStorage primeiro
         localStorage.setItem(key, JSON.stringify(value));
+        console.log(`💾 Salvo no localStorage - Key: ${key}`);
+        
+        // Tenta salvar na nuvem se URL estiver configurada
         if (sheetsUrl && typeof cloudSave === 'function') {
-          await cloudSave(key, value);
+          console.log(`☁️ Tentando sincronizar com Google Sheets...`);
+          const success = await cloudSave(key, value);
+          if (success) {
+            console.log(`✅ Sincronizado com Google Sheets - Key: ${key}`);
+            setStatus("saved");
+          } else {
+            console.warn(`⚠️ Falha ao sincronizar com Google Sheets - Key: ${key}`);
+            setStatus("error");
+          }
+        } else {
+          console.log("📍 Salvamento local apenas (URL do Sheets não configurada)");
+          setStatus("saved");
         }
-        setStatus("saved");
         setTimeout(() => setStatus("idle"), 2000);
       } catch (err) {
-        console.error("Auto-save error:", err);
+        console.error("❌ Erro no auto-save:", err);
         setStatus("error");
         setTimeout(() => setStatus("idle"), 3000);
       }
@@ -88,37 +102,58 @@ const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbzqg_7D_g6ndSs
 
 async function cloudSave(key, value){
   const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
-  if(!url)return false;
+  if(!url){
+    console.warn("⚠️ URL do Google Sheets não configurada");
+    return false;
+  }
   try{
+    console.log(`📤 Enviando dados para nuvem - Key: ${key}, Size: ${JSON.stringify(value).length} bytes`);
     const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),10000);
-    // Alterado para 'cors' para permitir que o navegador valide a resposta se possível,
-    // e simplificado o envio para garantir compatibilidade com o Apps Script.
+    const tid=setTimeout(()=>ctrl.abort(),15000);
+    
+    const payload = JSON.stringify({key,value});
+    
+    // Usando no-cors para compatibilidade com Apps Script
     const response = await fetch(url,{
       method:"POST",
-      headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body:JSON.stringify({key,value}),
+      mode:"no-cors", // CRÍTICO para Google Apps Script
+      headers:{"Content-Type":"application/json"},
+      body:payload,
       signal:ctrl.signal
     });
     clearTimeout(tid);
-    return response.ok;
+    
+    // Com no-cors, response.ok sempre será false, então consideramos sucesso se não houver erro
+    console.log("✅ Requisição enviada com sucesso para Google Sheets");
+    return true;
   }catch(e){
-    console.error("Erro ao salvar na nuvem:", e);
+    console.error("❌ Erro ao salvar na nuvem:", e);
+    console.error("Details:", e.message, e.stack);
     return false;
   }
 }
 async function cloudLoad(key){
   const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
-  if(!url)return null;
+  if(!url){
+    console.warn("⚠️ URL do Google Sheets não configurada para carregamento");
+    return null;
+  }
   try{
+    console.log(`📥 Carregando dados da nuvem - Key: ${key}`);
     const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),12000);
+    const tid=setTimeout(()=>ctrl.abort(),15000);
     const r=await fetch(`${url}?key=${encodeURIComponent(key)}&ts=${Date.now()}`,{signal:ctrl.signal});
     clearTimeout(tid);
     const text=await r.text();
+    console.log(`📦 Dados recebidos - Size: ${text.length} bytes`);
     if(!text||text==="null"||text.trim()==="")return null;
-    return JSON.parse(text);
-  }catch{return null;}
+    const parsed = JSON.parse(text);
+    console.log("✅ Dados carregados com sucesso da nuvem");
+    return parsed;
+  }catch(e){
+    console.error("❌ Erro ao carregar da nuvem:", e);
+    return null;
+  }
 }
 const LOGO_SRC="data:image/png;base64,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";
 
@@ -1049,6 +1084,68 @@ function App(){
     }
   };
 
+  const testSaveToCloud=async()=>{
+    if(!sheetsUrl){
+      alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar.");
+      return;
+    }
+    console.log("🧪 Iniciando teste de salvamento...");
+    setSyncStatus("syncing");setSyncMsg("🧪 Testando salvamento...");
+    
+    const testKey = "test_save_" + Date.now();
+    const testData = {
+      timestamp: new Date().toISOString(),
+      message: "Teste de sincronização Master EPI",
+      random: Math.random()
+    };
+    
+    try {
+      console.log("📤 Enviando dados de teste:", testKey, testData);
+      const saveSuccess = await cloudSave(testKey, testData);
+      
+      if (!saveSuccess) {
+        setSyncStatus("error");
+        setSyncMsg("❌ Erro ao salvar dados de teste");
+        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
+        return;
+      }
+      
+      console.log("⏳ Aguardando 2 segundos antes de ler...");
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log("📥 Tentando carregar dados de teste...");
+      const loadedData = await cloudLoad(testKey);
+      
+      if (!loadedData) {
+        setSyncStatus("error");
+        setSyncMsg("⚠️ Salvamento OK, mas leitura falhou. Verifique as permissões do Apps Script.");
+        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},5000);
+        return;
+      }
+      
+      console.log("✅ Dados carregados:", loadedData);
+      
+      if (JSON.stringify(loadedData) === JSON.stringify(testData)) {
+        setSyncStatus("ok");
+        setSyncMsg("✅ Teste completo! Salvamento e leitura funcionando!");
+        console.log("✅ TESTE PASSOU! Dados salvos e lidos corretamente.");
+      } else {
+        setSyncStatus("error");
+        setSyncMsg("⚠️ Dados foram salvos mas retornaram diferentes");
+        console.warn("⚠️ Dados salvos:", testData);
+        console.warn("⚠️ Dados lidos:", loadedData);
+      }
+      
+      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},5000);
+      
+    } catch(err) {
+      console.error("❌ Erro no teste:", err);
+      setSyncStatus("error");
+      setSyncMsg("❌ Erro no teste: " + err.message);
+      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
+    }
+  };
+
   const tabs=[{id:"pedidos",label:"📦 Pedidos",color:"#f59e0b"},{id:"nf",label:"🧾 NF-e",color:"#cc0000"},{id:"fretes",label:"🚚 Fretes",color:"#ff4444"}];
 
   const syncDot={idle:{c:"#334155",t:"Sem nuvem"},syncing:{c:"#fbbf24",t:"Sincronizando..."},ok:{c:"#4ade80",t:"Nuvem OK"},error:{c:"#f87171",t:"Erro na nuvem"}};
@@ -1120,6 +1217,7 @@ function out(v){
             {syncMsg&&<p style={{fontSize:12,color:syncStatus==="ok"?"#4ade80":syncStatus==="error"?"#f87171":"#fbbf24",marginBottom:12}}>{syncMsg}</p>}
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <button onClick={testConnection} style={{background:"#1e293b",color:"#94a3b8",border:"1px solid #334155",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>🔗 Testar conexão</button>
+              <button onClick={testSaveToCloud} style={{background:"#1c1200",color:"#fbbf24",border:"1px solid #ca8a04",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>🧪 Testar salvamento</button>
               <button onClick={saveUrl} style={{background:"#cc0000",color:"#fff",border:"none",padding:"9px 20px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>💾 Salvar e conectar</button>
               {sheetsUrl&&<button onClick={()=>{localStorage.removeItem(STORAGE_SHEETS_URL);setSheetsUrl("");setUrlDraft("");setShowSettings(false);}} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12}}>Desconectar</button>}
               <button onClick={()=>setShowSettings(false)} style={{background:"transparent",color:"#555",border:"1px solid #2a2a2a",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12,marginLeft:"auto"}}>Fechar</button>
