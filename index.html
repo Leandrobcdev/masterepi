@@ -100,8 +100,7 @@ const STORAGE_SOL_V2 = "solicitacoes_v1";
 const STORAGE_CAL_V1 = "calendario_compras_v1";
 
 // URL fixada
-const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbxKFZUGmjhf_RPXS4WDJNdRCnF2mxrZdwFm7UdunRaWeP33zwMtF9Qf_T0cuj8arQ6a/exec";
-
+const sheetsUrl = localStorage.getItem("sheets_url_v1");
 async function cloudSave(key, value){
   const url=DEFAULT_SHEETS_URL;
   if(!url)return false;
