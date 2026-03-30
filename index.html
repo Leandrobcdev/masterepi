@@ -34,7 +34,7 @@ const {useState,useEffect,useRef}=React;
 function useAutoSave(key, value, debounceMs = 800) {
   const debounceTimerRef = useRef(null);
   const [status, setStatus] = useState("idle");
-  const sheetsUrl = DEFAULT_SHEETS_URL; // URL travada direto no código
+  const sheetsUrl = localStorage.getItem("sheets_url_v1") || DEFAULT_SHEETS_URL;
 
   useEffect(() => {
     if (!value || (Array.isArray(value) && value.length === 0)) return;
