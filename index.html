@@ -83,7 +83,6 @@ async function cloudLoad(key) {
 function useAutoSave(key, value, debounceMs = 800) {
   const debounceTimerRef = useRef(null);
   const [status, setStatus] = useState("idle");
-  const sheetsUrl = localStorage.getItem("sheets_url_v1");
 
   useEffect(() => {
     if (!value || (Array.isArray(value) && value.length === 0)) return;
@@ -94,14 +93,6 @@ function useAutoSave(key, value, debounceMs = 800) {
     debounceTimerRef.current = setTimeout(async () => {
       try {
         localStorage.setItem(key, JSON.stringify(value));
-        if (sheetsUrl || DEFAULT_SHEETS_URL) {
-          const urlToUse = sheetsUrl || DEFAULT_SHEETS_URL;
-          // Salva temporariamente a URL se não estiver configurada
-          if (!sheetsUrl) {
-            localStorage.setItem("sheets_url_v1", DEFAULT_SHEETS_URL);
-          }
-          await cloudSave(key, value);
-        }
         setStatus("saved");
         setTimeout(() => setStatus("idle"), 2000);
       } catch (err) {
@@ -112,7 +103,7 @@ function useAutoSave(key, value, debounceMs = 800) {
     }, debounceMs);
 
     return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
-  }, [key, value, sheetsUrl]);
+  }, [key, value]);
 
   return status;
 }
@@ -980,22 +971,22 @@ function App(){
 }
 function doPost(e){
   try{
-    const raw=e.postData?e.postData.contents:"{}";
-    const b=JSON.parse(raw);
-    if(!b.key)return out("error:no key");
-    const val=JSON.stringify(b.value);
+    const key=e.parameter?.key;
+    const rawVal=e.parameter?.value;
+    if(!key)return out("error:no key");
+    const val=rawVal||"null";
     const ss=SpreadsheetApp.getActiveSpreadsheet();
     let sh=ss.getSheetByName("MasterEPI");
     if(!sh)sh=ss.insertSheet("MasterEPI");
     const data=sh.getDataRange().getValues();
     for(let i=0;i<data.length;i++){
-      if(data[i][0]===b.key){
+      if(data[i][0]===key){
         sh.getRange(i+1,2).setValue(val);
         SpreadsheetApp.flush();
         return out("ok");
       }
     }
-    sh.appendRow([b.key,val]);
+    sh.appendRow([key,val]);
     SpreadsheetApp.flush();
     return out("ok");
   }catch(err){return out("error:"+err.toString());}
