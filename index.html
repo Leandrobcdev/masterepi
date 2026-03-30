@@ -901,9 +901,9 @@ function App(){
     init();
   },[sheetsUrl]);
 
-  useEffect(()=>{ if(!dataLoaded)return; try{localStorage.setItem(STORAGE_NF,JSON.stringify(nfs));}catch{} if(sheetsUrl){cloudSave(STORAGE_NF,nfs);} },[nfs,dataLoaded]);
-  useEffect(()=>{ if(!dataLoaded)return; try{localStorage.setItem(STORAGE_FR,JSON.stringify(fretes));}catch{} if(sheetsUrl){cloudSave(STORAGE_FR,fretes);} },[fretes,dataLoaded]);
-
+  useEffect(()=>{ if(!dataLoaded)return; if(sheetsUrl){cloudSave(STORAGE_NF,nfs);} },[nfs,dataLoaded]);
+  useEffect(()=>{ if(!dataLoaded)return; if(sheetsUrl){cloudSave(STORAGE_FR,fretes);} },[fretes,dataLoaded]);
+              
   const saveUrl=()=>{ const url=urlDraft.trim(); localStorage.setItem(STORAGE_SHEETS_URL,url); setSheetsUrl(url); setShowSettings(false); };
   const exportarBackup=()=>{
     const backup={ versao:"masterepi_v1", data: new Date().toLocaleString("pt-BR"), nfs: JSON.parse(localStorage.getItem(STORAGE_NF)||"[]"), fretes: JSON.parse(localStorage.getItem(STORAGE_FR)||"[]"), pedidos: JSON.parse(localStorage.getItem(STORAGE_PED_V2)||"[]"), solicitacoes: JSON.parse(localStorage.getItem(STORAGE_SOL_V2)||"[]"), calendario: JSON.parse(localStorage.getItem(STORAGE_CAL_V1)||"{}") };
