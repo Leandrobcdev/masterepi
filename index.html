@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
@@ -17,8 +17,6 @@ select option{background:#1a1a1a;color:#e2e8f0;}
 ::-webkit-scrollbar-thumb{background:#cc0000;border-radius:3px;}
 @keyframes nfFlash{0%{background:#3a1a00;box-shadow:0 0 0 3px #cc0000;}50%{background:#2a0f00;box-shadow:0 0 0 6px rgba(204,0,0,0.4);}100%{background:inherit;box-shadow:none;}}
 .nf-highlight{animation:nfFlash 1.5s ease 3;}
-@keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
-.spin{animation:spin 1s linear infinite;}
 @media print{
   .no-print{display:none!important;}
   body{background:#fff;color:#000;}
@@ -30,124 +28,37 @@ select option{background:#1a1a1a;color:#e2e8f0;}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef}=React;
-// ===== AUTO-SAVE ENHANCEMENTS =====
-function useAutoSave(key, value, debounceMs = 800) {
-  const debounceTimerRef = useRef(null);
-  const [status, setStatus] = useState("idle");
-  const sheetsUrl = localStorage.getItem("sheets_url_v1") || DEFAULT_SHEETS_URL;
-
-  useEffect(() => {
-    if (!value || (Array.isArray(value) && value.length === 0)) return;
-
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    setStatus("saving");
-
-    debounceTimerRef.current = setTimeout(async () => {
-      try {
-        // Sempre salva no localStorage primeiro
-        localStorage.setItem(key, JSON.stringify(value));
-        console.log(`💾 Salvo no localStorage - Key: ${key}`);
-        
-        // Tenta salvar na nuvem se URL estiver configurada
-        if (sheetsUrl && typeof cloudSave === 'function') {
-          console.log(`☁️ Tentando sincronizar com Google Sheets...`);
-          const success = await cloudSave(key, value);
-          if (success) {
-            console.log(`✅ Sincronizado com Google Sheets - Key: ${key}`);
-            setStatus("saved");
-          } else {
-            console.warn(`⚠️ Falha ao sincronizar com Google Sheets - Key: ${key}`);
-            setStatus("error");
-          }
-        } else {
-          console.log("📍 Salvamento local apenas (URL do Sheets não configurada)");
-          setStatus("saved");
-        }
-        setTimeout(() => setStatus("idle"), 2000);
-      } catch (err) {
-        console.error("❌ Erro no auto-save:", err);
-        setStatus("error");
-        setTimeout(() => setStatus("idle"), 3000);
-      }
-    }, debounceMs);
-
-    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
-  }, [key, value, sheetsUrl]);
-
-  return status;
-}
-
-function AutoSaveIndicator({ status }) {
-  if (status === "idle") return null;
-  const colors = { saving: "#fbbf24", saved: "#4ade80", error: "#f87171" };
-  const texts = { saving: "💾 Salvando...", saved: "✅ Salvo", error: "❌ Erro" };
-  return (
-    <div style={{
-      position: "fixed", bottom: "20px", right: "20px", padding: "8px 12px", 
-      borderRadius: "6px", fontSize: "12px", fontWeight: "600", zIndex: 9999,
-      background: colors[status], color: "#000", boxShadow: "0 2px 10px rgba(0,0,0,0.3)"
-    }}>
-      {texts[status]}
-    </div>
-  );
-}
-
 const STORAGE_NF="nfe_v4";
 const STORAGE_FR="fretes_v3";
 const STORAGE_SHEETS_URL="sheets_url_v1";
 const STORAGE_PED_V2 = "pedidos_v2";
 const STORAGE_SOL_V2 = "solicitacoes_v1";
 const STORAGE_CAL_V1 = "calendario_compras_v1";
+const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbzqg_7D_g6ndSs3xQ5Yn36m0b_uoAD1RlCgOzJJwGfLdOu8RU7lePVQQD9U1wFB96Xr/exec";
 
-// URL fixada
-const sheetsUrl = localStorage.getItem("sheets_url_v1");
 async function cloudSave(key, value){
-  const url=DEFAULT_SHEETS_URL;
+  const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
   if(!url)return false;
   try{
     const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),15000);
-    // CORREÇÃO: form-urlencoded funciona com CORS do Apps Script
-    const body=new URLSearchParams({key:key,value:JSON.stringify(value)});
-    const response=await fetch(url,{
-      method:"POST",
-      headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:body.toString(),
-      signal:ctrl.signal
-    });
+    const tid=setTimeout(()=>ctrl.abort(),10000);
+    await fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({key,value}),signal:ctrl.signal});
     clearTimeout(tid);
-    if(!response.ok){console.error("HTTP erro:",response.status);return false;}
-    const text=await response.text();
-    console.log("✅ cloudSave ok - key:",key);
-    return text==="ok"||text.includes("ok");
-  }catch(e){
-    console.error("❌ cloudSave erro:",e.message);
-    return false;
-  }
+    return true;
+  }catch{return false;}
 }
- 
 async function cloudLoad(key){
-  const url=DEFAULT_SHEETS_URL;
-  if(!url){
-    console.warn("⚠️ URL do Google Sheets não configurada para carregamento");
-    return null;
-  }
+  const url=localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL;
+  if(!url)return null;
   try{
-    console.log(`📥 Carregando dados da nuvem - Key: ${key}`);
     const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),15000);
+    const tid=setTimeout(()=>ctrl.abort(),12000);
     const r=await fetch(`${url}?key=${encodeURIComponent(key)}&ts=${Date.now()}`,{signal:ctrl.signal});
     clearTimeout(tid);
     const text=await r.text();
-    console.log(`📦 Dados recebidos - Size: ${text.length} bytes`);
     if(!text||text==="null"||text.trim()==="")return null;
-    const parsed = JSON.parse(text);
-    console.log("✅ Dados carregados com sucesso da nuvem");
-    return parsed;
-  }catch(e){
-    console.error("❌ Erro ao carregar da nuvem:", e);
-    return null;
-  }
+    return JSON.parse(text);
+  }catch{return null;}
 }
 const LOGO_SRC="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCADhAOEDASIAAhEBAxEB/8QAHQABAAICAwEBAAAAAAAAAAAAAAUHBAYCCAkDAf/EAFkQAAAFAgMDBwMMCw4FBQAAAAABAgMEBQYHERITISIIFBUxQVFhMnGBCSMzNkJSYnJzdZGzFiQnNVR0kqKxssEXJSY0N0NTZXaCocLR4RgoVVdkk5SVo9L/xAAcAQEAAQUBAQAAAAAAAAAAAAAABQECAwQGBwj/xAA6EQACAQMCAwQECwkAAAAAAAAAAQIDBBEFIQYSMRNBUXEiYYHRBxQjMjQ1kaGxwfAVFjNCUlRykuH/2gAMAwEAAhEDEQA/AOmQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADkkANI3eybQj1uK5MkynEI1qTsUFxbu8xsFgWk1DiN1OsskuWvjQhf80ns9I2+NDjR3X32m9Dj69a/hqyyzENeailmFN7+J6twvwHOTp3d/FOL/kec9Nm/d4dfAr+6LDhwqTIqEOW4RMINWheStWXiK7dbWg8lEZDsLMjNSIjjEhvW2vy0e+ERdduxq3Ttns225TfsL3vPg+YY7XU3H0au/rJDiP4PoV3Ktp6UML5u/pPfPltjHc/UUaAypkdyLJWw+g0ONqNKy8SGKJ1PJ43KLi3F9UAAALQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnbPg9IXNBjOb2zc1r+Knef6BBDfsHoe0q0uWfWwzoR8ZR/7DBcz5KUpeomuHbL49qlCg+jks+S3f3ItIAAcgfUYAAAFVYtU041WYqDeeiW3x/GL/AGy+gaILfxZZNy2dp+Dvp/x3CoB1GnVHUoJvu2PnLjqxjZ6zUUek8S+3r9+QAAN448AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANpor1ftlpFUbjONxX+xfkr7t3WXnELSENu1SI06Z7Nx5KV+YzyF13NAbqNvy4i9yNGtHwFFvL9A0Ly5jScYSWVLqdpwpoFW/pV7uhVcJ0l6OPHd7+rbHtIakXnziKh+RR6i22v3bKDcb8fESTd1UUvZZTjXx4zhfsEVhVOju28UTaevsLVwfBM8y/SNguOqR6VSlzpHrho8hHvldhCHrU6arOmoPr4nqel3t7PS4X1S5jjly+aGcbb/NlHo9umTDcu6gfzcpbnxGFq/YMKbeTbTK3I1Hqr5I92to20+fMfayLh6eiL2jbTEphfGlHvT6jGfdMmPHoEvnLqW9oytCNfu1GnIiFOSFOp2coPPn/AML1eXd5p7vKN3FQw2moY6ePNJ439WSup9WuC8jXFjRkEy3xqabP6MzV1jTnEG2s0LIyUQt3CuG3Htnb+7fWpZ+jcQ0XEeO2xdcvZ55L0rPzmW8TFtXj20qMVhI8v4g0ev8ALo1bVXKnTrnweXHHs7vWawAAJA4UAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADkR5GLCcxAJ23lxHIznPltbLVu0dWWrv8AQK7AYatCFbHOuhKabrN5pimraWOdYf68V3Ms9FiQ+heeRpMnnXNkrRvJKdWWY0HVOmuoi635CzXpQjUat/gLLwmXMcoCyf3sbbQxn5t5CEu+G5bFQXPiezTnVbNZI9iLtIvHeI+hXnGtOlN5fcdtrOi21XS7bUbaDp02vlEvPrhvdt7e1Z2NRnxqhSag4xI2jEhB8XH1+ntG7UiyjqtAYlzJ0huU5xI1cSST2ZkIekHKu2UmBNf2kttOtiQpPFkR70n3lvG939tI1ny+buON7PR5HDw5pIVurialCmniTZbw7otpUoXN9Vi50IxbjFvDb3bzh9VjqvFM1ih3Y3blPkUWQy4+9FecQhaMtKt/b3bxo9Wmu1GoPzJB8bqtRjEUY4jep28KcnJLd9Tjr/W7u9oU7apL5On81eHhl9+FtlgAAZyIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACcplxVinRTiQ5uyZz1ZaC/w3DjFqzmpxuom5LZWvUtDizz1d5H2GIUBj7KG7x1N1ajdKMYObcY9E3leWHtgn6hU4cc1sUNEiOy55a1rzcX4eBDF6bqnR3RnPHea9Wz7OvMRQAqccYayUnqFxKTcZOKaxhbLD7sLu/TAAAyGmAActIA4gAAAA5aRxAABy0jiAADkOIAAAAAL65GeFFNxKvuZMuFrb0SitodfjZmRSHFmezQZ+84VGrzEXaKFHd31NdnK2Lxkd82On6G1/6gDsTcGG1i1u2HLcm2nSjpy29mTbcVDZteKFJLNJl3kK1wX5MdlWDOl1Kott3JPOSrmL01klJjs58JbPyTX3r+jIbnc1/Sabj1aVgNbPm1WpsuU/wZq1I9iyPsLgcz9Ax+Uve9WsDDFdboRtJnOTo0VC3kakpJxfEeXaeRGBRGtcq/CS3bswsrFThUaFGrlJiuTYslhkm1rS2WpbZ6espJLLLPPtEeAAz1VKpdKlUznSDnE4l3nO0PaEoupWfXmWQykXFXW5TEtusTifjgWhh3bnmhKyyWRd2ZGefeBYADPVUql0qVTOdIOcTiXec7Q9oSi6lZ9eZZDKRcVdblMS26xOJ+OBaGHdueaErLJZF3ZkZ594FgAM9VSqXSpVM50g5xOJd5ztD2hKLqVn15lkMpFxV1uUxLbrE4n44FoYd255oSsslkXdmRnn3gWAAz1VKpdKlUznSDnE4l3nO0PaEoupWfXmWQykXFXW5TEtusTifjgWhh3bnmhKyyWRd2ZGefeBYADPVUql0qVTOdIOcTiXec7Q9oSi6lZ9eZZDKRcVdblMS26xOJ+OBaGHdueaErLJZF3ZkZ594FgAM9VSqXSpVM50g5xOJd5ztD2hKLqVn15lkMpFxV1uUxLbrE4n44FoYd255oSsslkXdmRnn3gWAAz1VKpdKlUznSDnE4l3nO0PaEoupWfXmWQykXFXW5TEtusTifjgWhh3bnmhKyyWRd2ZGefeBYADPVUql0qVTOdIOcTiXec7Q9oSi6lZ9eZZDKRcVdblMS26xOJ+OBaGHdueaErLJZF3ZkZ594H/2Q==";
 
@@ -874,15 +785,12 @@ function App(){
   };
   const[dataLoaded,setDataLoaded]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
-  const[sheetsUrl,setSheetsUrl]=useState(DEFAULT_SHEETS_URL);
-  const[urlDraft,setUrlDraft]=useState(DEFAULT_SHEETS_URL);
+  const[sheetsUrl,setSheetsUrl]=useState(()=>localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL);
+  const[urlDraft,setUrlDraft]=useState(()=>localStorage.getItem(STORAGE_SHEETS_URL)||DEFAULT_SHEETS_URL);
   const[syncStatus,setSyncStatus]=useState("idle");
   const[syncMsg,setSyncMsg]=useState("");
   const[highlightNF,setHighlightNF]=useState(null);
   const[highlightPedido,setHighlightPedido]=useState(null);
-  const nfsStatus = useAutoSave(STORAGE_NF, nfs);
-  const fretesStatus = useAutoSave(STORAGE_FR, fretes);
-
   const isConnected=!!sheetsUrl;
 
   const navegarParaNF=(nfNumero)=>{
@@ -908,36 +816,27 @@ function App(){
       if(localNfs.length>0)setNfs(localNfs);
       if(localFr.length>0)setFretes(localFr);
 
-      const justRestored=sessionStorage.getItem("backup_just_restored");
-      if(justRestored){sessionStorage.removeItem("backup_just_restored");}
-      if(sheetsUrl && !justRestored){
-        setSyncStatus("syncing"); setSyncMsg("Sincronizando com a nuvem...");
-        async function sync(){
-          try {
-            const [cnf, cfr] = await Promise.all([cloudLoad(STORAGE_NF), cloudLoad(STORAGE_FR)]);
-            
-            // Se encontrou dados na nuvem, eles SEMPRE mandam (sobrescrevem o local vazio ou antigo)
-            if(cnf && Array.isArray(cnf)){
+      if(sheetsUrl){
+        setSyncStatus("syncing");setSyncMsg("Sincronizando com a nuvem...");
+        try{
+          const [cnf,cfr]=await Promise.all([cloudLoad(STORAGE_NF),cloudLoad(STORAGE_FR)]);
+          if(cnf&&Array.isArray(cnf)&&cnf.length>0){
+            if(cnf.length>=localNfs.length){
               setNfs(cnf);
-              localStorage.setItem(STORAGE_NF, JSON.stringify(cnf));
+              try{localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));}catch{}
             }
-            if(cfr && Array.isArray(cfr)){
-              setFretes(cfr);
-              localStorage.setItem(STORAGE_FR, JSON.stringify(cfr));
-            }
-            
-            setSyncStatus("ok"); setSyncMsg("Sincronizado ✓");
-          } catch(e) {
-            console.error("Erro sync:", e);
-            setSyncStatus("error"); setSyncMsg("⚠️ Nuvem indisponível — usando dados locais");
           }
-          setTimeout(()=>{ setSyncStatus("idle"); setSyncMsg(""); }, 4000);
+          if(cfr&&Array.isArray(cfr)&&cfr.length>0){
+            if(cfr.length>=localFr.length){
+              setFretes(cfr);
+              try{localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));}catch{}
+            }
+          }
+          setSyncStatus("ok");setSyncMsg("Sincronizado ✓");
+        }catch{
+          setSyncStatus("error");setSyncMsg("⚠️ Nuvem indisponível — usando dados locais");
         }
-        sync();
-      } else {
-        // Se não tem nuvem ou acabou de restaurar backup, usa o que está no local
-        setNfs(localNfs);
-        setFretes(localFr);
+        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
       }
       setDataLoaded(true);
     }
@@ -946,18 +845,21 @@ function App(){
 
   useEffect(()=>{
     if(!dataLoaded)return;
+    if(nfs.length===0)return;
     try{localStorage.setItem(STORAGE_NF,JSON.stringify(nfs));}catch{}
     if(sheetsUrl){cloudSave(STORAGE_NF,nfs);}
   },[nfs,dataLoaded]);
 
   useEffect(()=>{
     if(!dataLoaded)return;
+    if(fretes.length===0)return;
     try{localStorage.setItem(STORAGE_FR,JSON.stringify(fretes));}catch{}
     if(sheetsUrl){cloudSave(STORAGE_FR,fretes);}
   },[fretes,dataLoaded]);
 
   const saveUrl=()=>{
     const url=urlDraft.trim();
+    localStorage.setItem(STORAGE_SHEETS_URL,url);
     setSheetsUrl(url);
     setShowSettings(false);
   };
@@ -983,41 +885,32 @@ function App(){
     const file=e.target.files[0];
     if(!file)return;
     const reader=new FileReader();
-    reader.onload=async ev=>{
+    reader.onload=ev=>{
       try{
         const backup=JSON.parse(ev.target.result);
         if(!backup.versao)throw new Error("Arquivo inválido");
-        const saves=[];
         if(backup.nfs?.length>0){
           localStorage.setItem(STORAGE_NF,JSON.stringify(backup.nfs));
           setNfs(backup.nfs);
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_NF,backup.nfs));
+          if(sheetsUrl)cloudSave(STORAGE_NF,backup.nfs);
         }
         if(backup.fretes?.length>0){
           localStorage.setItem(STORAGE_FR,JSON.stringify(backup.fretes));
           setFretes(backup.fretes);
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_FR,backup.fretes));
+          if(sheetsUrl)cloudSave(STORAGE_FR,backup.fretes);
         }
         if(backup.pedidos?.length>0){
           localStorage.setItem(STORAGE_PED_V2,JSON.stringify(backup.pedidos));
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_PED_V2,backup.pedidos));
+          if(sheetsUrl)cloudSave(STORAGE_PED_V2,backup.pedidos);
         }
         if(backup.solicitacoes?.length>0){
           localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(backup.solicitacoes));
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_SOL_V2,backup.solicitacoes));
+          if(sheetsUrl)cloudSave(STORAGE_SOL_V2,backup.solicitacoes);
         }
         if(backup.calendario&&Object.keys(backup.calendario).length>0){
           localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(backup.calendario));
-          if(sheetsUrl)saves.push(cloudSave(STORAGE_CAL_V1,backup.calendario));
+          if(sheetsUrl)cloudSave(STORAGE_CAL_V1,backup.calendario);
         }
-        // Aguarda todos os saves na nuvem antes de recarregar,
-        // evitando que a sincronização inicial sobrescreva os dados restaurados
-        if(saves.length>0){
-          try{await Promise.all(saves);}catch{}
-        }
-        // Sinaliza para o próximo carregamento que é uma restauração de backup
-        // e não deve sobrescrever com dados da nuvem
-        sessionStorage.setItem("backup_just_restored","1");
         alert(`✅ Backup restaurado com sucesso!\nData do backup: ${backup.data}\nNFs: ${backup.nfs?.length||0} | Fretes: ${backup.fretes?.length||0} | Pedidos: ${backup.pedidos?.length||0}\n\nRecarregando a página...`);
         setTimeout(()=>window.location.reload(),800);
       }catch(err){
@@ -1041,112 +934,13 @@ function App(){
     setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
   };
 
-  const forceSync=async()=>{
-    if(!sheetsUrl){
-      alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar.");
-      return;
-    }
-    if(!confirm("Isso irá substituir os dados atuais pelos dados salvos na nuvem (NFs, Fretes, Pedidos, Solicitações e Calendário). Continuar?")) return;
-    setSyncStatus("syncing");setSyncMsg("🔄 Baixando tudo da nuvem...");
-    try{
-      const [cnf,cfr,cped,csol,ccal]=await Promise.all([
-        cloudLoad(STORAGE_NF),
-        cloudLoad(STORAGE_FR),
-        cloudLoad(STORAGE_PED_V2),
-        cloudLoad(STORAGE_SOL_V2),
-        cloudLoad(STORAGE_CAL_V1),
-      ]);
-      let count=0;
-      if(cnf && Array.isArray(cnf)){setNfs(cnf);localStorage.setItem(STORAGE_NF,JSON.stringify(cnf));count++;}
-      if(cfr && Array.isArray(cfr)){setFretes(cfr);localStorage.setItem(STORAGE_FR,JSON.stringify(cfr));count++;}
-      if(cped && Array.isArray(cped)&&cped.length>0){localStorage.setItem(STORAGE_PED_V2,JSON.stringify(cped));count++;}
-      if(csol && Array.isArray(csol)&&csol.length>0){localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(csol));count++;}
-      if(ccal && typeof ccal==="object"&&Object.keys(ccal).length>0){localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(ccal));count++;}
-      setSyncStatus("ok");
-      const needsReload=count>2; // pedidos/sol/cal atualizados → precisa reload
-      setSyncMsg(needsReload?"✅ Sincronizado! Recarregando para aplicar Pedidos...":"✅ Dados de NFs e Fretes atualizados!");
-      if(needsReload){
-        sessionStorage.setItem("backup_just_restored","1");
-        setTimeout(()=>window.location.reload(),2000);
-      }else{
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},3000);
-      }
-    }catch(err){
-      setSyncStatus("error");setSyncMsg("❌ Erro ao sincronizar: "+err.message);
-      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-    }
-  };
-
-  const testSaveToCloud=async()=>{
-    if(!sheetsUrl){
-      alert("⚠️ Nuvem não configurada. Vá em Configurações para conectar.");
-      return;
-    }
-    console.log("🧪 Iniciando teste de salvamento...");
-    setSyncStatus("syncing");setSyncMsg("🧪 Testando salvamento...");
-    
-    const testKey = "test_save_" + Date.now();
-    const testData = {
-      timestamp: new Date().toISOString(),
-      message: "Teste de sincronização Master EPI",
-      random: Math.random()
-    };
-    
-    try {
-      console.log("📤 Enviando dados de teste:", testKey, testData);
-      const saveSuccess = await cloudSave(testKey, testData);
-      
-      if (!saveSuccess) {
-        setSyncStatus("error");
-        setSyncMsg("❌ Erro ao salvar dados de teste");
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-        return;
-      }
-      
-      console.log("⏳ Aguardando 2 segundos antes de ler...");
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      console.log("📥 Tentando carregar dados de teste...");
-      const loadedData = await cloudLoad(testKey);
-      
-      if (!loadedData) {
-        setSyncStatus("error");
-        setSyncMsg("⚠️ Salvamento OK, mas leitura falhou. Verifique as permissões do Apps Script.");
-        setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},5000);
-        return;
-      }
-      
-      console.log("✅ Dados carregados:", loadedData);
-      
-      if (JSON.stringify(loadedData) === JSON.stringify(testData)) {
-        setSyncStatus("ok");
-        setSyncMsg("✅ Teste completo! Salvamento e leitura funcionando!");
-        console.log("✅ TESTE PASSOU! Dados salvos e lidos corretamente.");
-      } else {
-        setSyncStatus("error");
-        setSyncMsg("⚠️ Dados foram salvos mas retornaram diferentes");
-        console.warn("⚠️ Dados salvos:", testData);
-        console.warn("⚠️ Dados lidos:", loadedData);
-      }
-      
-      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},5000);
-      
-    } catch(err) {
-      console.error("❌ Erro no teste:", err);
-      setSyncStatus("error");
-      setSyncMsg("❌ Erro no teste: " + err.message);
-      setTimeout(()=>{setSyncStatus("idle");setSyncMsg("");},4000);
-    }
-  };
-
   const tabs=[{id:"pedidos",label:"📦 Pedidos",color:"#f59e0b"},{id:"nf",label:"🧾 NF-e",color:"#cc0000"},{id:"fretes",label:"🚚 Fretes",color:"#ff4444"}];
 
   const syncDot={idle:{c:"#334155",t:"Sem nuvem"},syncing:{c:"#fbbf24",t:"Sincronizando..."},ok:{c:"#4ade80",t:"Nuvem OK"},error:{c:"#f87171",t:"Erro na nuvem"}};
-  const sd=(syncStatus==="idle"&&isConnected)?{c:"#22c55e",t:"Nuvem conectada"}:syncDot[syncStatus];
+  const sd=syncDot[syncStatus];
 
   return(
     <div style={{fontFamily:"'Barlow','Segoe UI',sans-serif",background:"#0a0a0a",minHeight:"100vh",color:"#e2e8f0"}}>
-      <AutoSaveIndicator status={nfsStatus !== 'idle' ? nfsStatus : fretesStatus} />
       {showSettings&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"#141414",border:"1px solid #cc0000",borderRadius:12,padding:32,maxWidth:540,width:"100%",boxShadow:"0 8px 40px rgba(204,0,0,0.3)"}}>
@@ -1202,7 +996,7 @@ function out(v){
 }`}
             </div>
             <div style={{marginBottom:14}}>
-              <label style={{color:"#94a3b8",fontSize:12,display:"block",marginBottom:6}}>URL do Apps Script (Salva no Código):</label>
+              <label style={{color:"#94a3b8",fontSize:12,display:"block",marginBottom:6}}>URL do Apps Script:</label>
               <input value={urlDraft} onChange={e=>setUrlDraft(e.target.value)}
                 placeholder="https://script.google.com/macros/s/..."
                 style={{width:"100%",background:"#0a0a0a",border:"1px solid #334155",borderRadius:8,padding:"10px 14px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"}}/>
@@ -1210,8 +1004,8 @@ function out(v){
             {syncMsg&&<p style={{fontSize:12,color:syncStatus==="ok"?"#4ade80":syncStatus==="error"?"#f87171":"#fbbf24",marginBottom:12}}>{syncMsg}</p>}
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <button onClick={testConnection} style={{background:"#1e293b",color:"#94a3b8",border:"1px solid #334155",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>🔗 Testar conexão</button>
-              <button onClick={testSaveToCloud} style={{background:"#1c1200",color:"#fbbf24",border:"1px solid #ca8a04",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>🧪 Testar salvamento</button>
               <button onClick={saveUrl} style={{background:"#cc0000",color:"#fff",border:"none",padding:"9px 20px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>💾 Salvar e conectar</button>
+              {sheetsUrl&&<button onClick={()=>{localStorage.removeItem(STORAGE_SHEETS_URL);setSheetsUrl("");setUrlDraft("");setShowSettings(false);}} style={{background:"transparent",color:"#64748b",border:"1px solid #334155",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12}}>Desconectar</button>}
               <button onClick={()=>setShowSettings(false)} style={{background:"transparent",color:"#555",border:"1px solid #2a2a2a",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontSize:12,marginLeft:"auto"}}>Fechar</button>
             </div>
             <div style={{marginTop:20,borderTop:"1px solid #1a1a1a",paddingTop:16}}>
@@ -1235,13 +1029,8 @@ function out(v){
           <div style={{flex:1}}>
             <p style={{margin:0,fontSize:11,color:"#888",letterSpacing:2,textTransform:"uppercase"}}>Controle Diário &nbsp;·&nbsp; Belém do Pará &nbsp;·&nbsp; {today()}</p>
           </div>
-          {syncMsg&&<span style={{fontSize:12,color:syncStatus==="ok"?"#4ade80":syncStatus==="error"?"#f87171":"#fbbf24",fontWeight:600,background:"#141414",border:"1px solid #2a2a2a",borderRadius:8,padding:"6px 12px",whiteSpace:"nowrap"}}>{syncMsg}</span>}
-          <button onClick={forceSync} title="Sincronizar todos os dados agora" style={{background:"#141414",border:"1px solid #cc0000",borderRadius:8,padding:"8px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:"#ff9999",fontSize:12,fontWeight:600,marginRight:8}}>
-            <span style={{animation:syncStatus==="syncing"?"spin 1s linear infinite":"none"}}>🔄</span>
-            Sincronizar
-          </button>
           <button onClick={()=>setShowSettings(true)} title={sd.t} style={{background:"#141414",border:`1px solid ${isConnected?"#cc0000":"#2a2a2a"}`,borderRadius:8,padding:"8px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:isConnected?"#fff":"#555",fontSize:12,fontWeight:600}}>
-            <span style={{width:10,height:10,borderRadius:"50%",background:sd.c,display:"inline-block",boxShadow:syncStatus==="syncing"?"0 0 8px #fbbf24":isConnected&&syncStatus==="idle"?"0 0 6px #22c55e":"none"}}/>
+            <span style={{width:10,height:10,borderRadius:"50%",background:sd.c,display:"inline-block",boxShadow:syncStatus==="syncing"?"0 0 8px #fbbf24":"none"}}/>
             {isConnected?"☁️ Nuvem":"☁️ Configurar Nuvem"}
           </button>
         </div>
@@ -1294,21 +1083,18 @@ function CalendarioCompras({grupos, sheetsUrl}){
 
   useEffect(()=>{
     async function init(){
-      const justRestored=sessionStorage.getItem("backup_just_restored");
-      if(sheetsUrl&&!justRestored){
+      if(sheetsUrl){
         const c=await cloudLoad(STORAGE_CAL_V1);
-        if(c&&Object.keys(c).length>0){setCal(c);setLoaded(true);return;}
+        if(c){setCal(c);setLoaded(true);return;}
       }
-      try{const s=localStorage.getItem(STORAGE_CAL_V1);if(s){const p=JSON.parse(s);if(p&&Object.keys(p).length>0){setCal(p);setLoaded(true);return;}}}catch{}
-      // Sem dados reais — carrega padrão mas não permite salvar na nuvem
-      setLoaded(false);
+      try{const s=localStorage.getItem(STORAGE_CAL_V1);if(s){setCal(JSON.parse(s));setLoaded(true);return;}}catch{}
+      setLoaded(true);
     }
     init();
   },[sheetsUrl]);
 
   useEffect(()=>{
     if(!loaded)return;
-    if(!cal||Object.keys(cal).length===0)return;
     try{localStorage.setItem(STORAGE_CAL_V1,JSON.stringify(cal));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_CAL_V1,cal);
   },[cal,loaded]);
@@ -1316,13 +1102,11 @@ function CalendarioCompras({grupos, sheetsUrl}){
   const addMarca=(dia)=>{
     const m=novaMarca.trim().toUpperCase();
     if(!m)return;
-    setLoaded(true);
     setCal(prev=>({...prev,[dia]:[...(prev[dia]||[]),m]}));
     setNovaMarca("");
   };
 
   const removeMarca=(dia,idx)=>{
-    setLoaded(true);
     setCal(prev=>({...prev,[dia]:(prev[dia]||[]).filter((_,i)=>i!==idx)}));
   };
 
@@ -1543,9 +1327,6 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
   const [modalPreview, setModalPreview] = useState([]);
   const [novaSol, setNovaSol] = useState({cod:"", descricao:"", data:""});
   const [toast, setToast] = useState(null);
-  const pedStatus = useAutoSave(STORAGE_PED_V2, grupos);
-  const solStatus = useAutoSave(STORAGE_SOL_V2, solicitacoes);
-
   const showToast = (m) => { setToast(m); setTimeout(()=>setToast(null),3500); };
   const pedidoRefs=useRef({});
 
@@ -1606,8 +1387,7 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
   useEffect(()=>{
     loadedRef.current=false;
     async function init(){
-      const justRestored=sessionStorage.getItem("backup_just_restored");
-      if(sheetsUrl&&!justRestored){
+      if(sheetsUrl){
         setSyncPed("syncing");
         const cloud=await cloudLoad(STORAGE_PED_V2);
         if(cloud&&cloud.length>0){loadedRef.current=true;setGrupos(cloud);setSyncPed("ok");setTimeout(()=>setSyncPed("idle"),2500);return;}
@@ -1617,25 +1397,22 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
       setSyncPed("idle");
     }
     async function initSol(){
-      const justRestored=sessionStorage.getItem("backup_just_restored");
-      if(sheetsUrl&&!justRestored){const c=await cloudLoad(STORAGE_SOL_V2);if(c&&c.length>0){solLoaded.current=true;setSolicitacoes(c);return;}}
-      try{const s=localStorage.getItem(STORAGE_SOL_V2);if(s){const d=JSON.parse(s);if(d&&d.length>0){solLoaded.current=true;setSolicitacoes(d);return;}}}catch{}
-      // Não salva PLANILHA_DATA na nuvem — apenas carrega localmente sem marcar como loaded para evitar sobrescrever dados reais
-      solLoaded.current=false;setSolicitacoes(PLANILHA_DATA.solicitacoes||[]);
+      if(sheetsUrl){const c=await cloudLoad(STORAGE_SOL_V2);if(c){solLoaded.current=true;setSolicitacoes(c);return;}}
+      try{const s=localStorage.getItem(STORAGE_SOL_V2);if(s){solLoaded.current=true;setSolicitacoes(JSON.parse(s));return;}}catch{}
+      solLoaded.current=true;setSolicitacoes(PLANILHA_DATA.solicitacoes||[]);
     }
     init();initSol();
   },[sheetsUrl]);
 
   useEffect(()=>{
     if(!loadedRef.current)return;
-    // if(grupos.length===0)return;
+    if(grupos.length===0)return;
     try{localStorage.setItem(STORAGE_PED_V2,JSON.stringify(grupos));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_PED_V2,grupos);
   },[grupos]);
 
   useEffect(()=>{
     if(!solLoaded.current)return;
-    // if(solicitacoes.length===0)return;
     try{localStorage.setItem(STORAGE_SOL_V2,JSON.stringify(solicitacoes));}catch{}
     if(sheetsUrl)cloudSave(STORAGE_SOL_V2,solicitacoes);
   },[solicitacoes]);
@@ -1644,34 +1421,10 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
     raw=raw.replace(/__ABRIR PDF__/gi,'').replace(/[🟢🔴🟠🟡⚫⚪🔵🟣✅❌⚠️]/g,'').trim();
     const items=[];
     for(const line of raw.split('\n').map(l=>l.trim()).filter(Boolean)){
-      // Tenta capturar a data no início (ex: 06/03/2026)
-      const dataMatch = line.match(/^(\d{2}\/\d{2}\/\d{4})/);
-      const dataSolicitacao = dataMatch ? dataMatch[1] : "";
-      
-      // Remove a data da linha para processar o resto
-      const cleanLine = line.replace(/^\d{2}\/\d{2}\/\d{4}\s*/, '').trim();
-      const cols = cleanLine.split('\t');
-      
-      if(cols.length >= 2){
-        const cod = cols[0]?.trim() || '';
-        const desc = cols[1]?.trim() || '';
-        const qtd = cols[2]?.trim() || '';
-        const vlr = cols[4]?.trim() || cols[3]?.trim() || ''; // Tenta pegar o valor na 5ª ou 4ª coluna
-        if(cod && desc) {
-          items.push({dataSolicitacao, cod, descricao: desc, qtdSugerida: qtd, vlrUnit: vlr, saldoEstoque: ""});
-          continue;
-        }
-      }
-      
-      // Fallback para linhas sem TAB (exemplo enviado pelo usuário)
-      // 06/03/2026 6539 SAP MOOV EVA BRANCO N.37 - CA 52380 24
-      const m = cleanLine.match(/^(\d{3,10})\s+(.+?)\s+(\d+[\d,.]*)$/);
-      if(m) {
-        items.push({dataSolicitacao, cod: m[1], descricao: m[2].trim(), qtdSugerida: m[3], vlrUnit: '', saldoEstoque: ''});
-      } else {
-        const m2 = cleanLine.match(/^(\d{3,10})\s+(.+)/);
-        if(m2) items.push({dataSolicitacao, cod: m2[1], descricao: m2[2].trim(), qtdSugerida: '', vlrUnit: '', saldoEstoque: ''});
-      }
+      const cols=line.split('\t');
+      if(cols.length>=2){const cod=cols[0]?.trim()||'',desc=cols[1]?.trim()||'',qtd=cols[2]?.trim()||'',sal=cols[3]?.trim()||'';if(cod&&desc)items.push({cod,descricao:desc,qtdSugerida:qtd,saldoEstoque:sal});continue;}
+      const m=line.match(/^(\d{3,6})\s+(.+)/);
+      if(m)items.push({cod:m[1],descricao:m[2].trim(),qtdSugerida:'',saldoEstoque:''});
     }
     return items;
   }
@@ -2072,6 +1825,175 @@ function PedidosTab({sheetsUrl, nfs, setNfs, fretes, setFretes, navegarParaNF, h
                         const toggleEditItens=()=>setExpandidos(p=>({...p,[g._gid+"_itens"]:!p[g._gid+"_itens"]}));
                         const updItem=(i,field,val)=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.map((it,idx)=>idx===i?{...it,[field]:val}:it)}:gr));
                         const removeItem=(i)=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:gr.itens.filter((_,idx)=>idx!==i)}:gr));
-                        const addItem=()=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:[...(gr.itens||[]),{dataSolicitacao:today(),cod:"",descricao:"",qtdSugerida:"",saldoEstoque:"",vlrUnit:""}]}:gr));
+                        const addItem=()=>setGrupos(prev=>prev.map(gr=>gr._gid===g._gid?{...gr,itens:[...(gr.itens||[]),{cod:"",descricao:"",qtdSugerida:"",saldoEstoque:"",vlrUnit:""}]}:gr));
                         const itens=g.itens||[];
-                        const iStyle={background:"#0a0a0a",border:"1px solid #2a2a
+                        const iStyle={background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:4,padding:"3px 6px",fontSize:11,outline:"none",width:"100%",boxSizing:"border-box"};
+                        return(
+                          <div>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                              <span style={{color:"#475569",fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>
+                                📦 Itens do Pedido <span style={{color:"#555",fontWeight:400}}>({itens.length})</span>
+                              </span>
+                              <div style={{display:"flex",gap:6}}>
+                                {editandoItens&&<button onClick={addItem} style={{background:"#052e16",border:"1px solid #16a34a",borderRadius:6,padding:"4px 12px",color:"#4ade80",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Adicionar linha</button>}
+                                <button onClick={toggleEditItens} style={{background:editandoItens?"#cc0000":"#1a1a1a",border:`1px solid ${editandoItens?"#cc0000":"#334155"}`,borderRadius:6,padding:"4px 12px",color:editandoItens?"#fff":"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                                  {editandoItens?"✓ Salvo":"✏️ Editar itens"}
+                                </button>
+                              </div>
+                            </div>
+
+                            {itens.length===0&&!editandoItens?(
+                              <div style={{textAlign:"center",padding:"16px 0",color:"#334155",fontSize:12}}>
+                                Nenhum item. <button onClick={toggleEditItens} style={{background:"transparent",border:"none",color:"#cc0000",cursor:"pointer",fontSize:12,textDecoration:"underline"}}>Adicionar itens</button>
+                              </div>
+                            ):(
+                              <div style={{overflowX:"auto"}}>
+                                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                                  <thead>
+                                    <tr style={{background:"#141414",borderBottom:"1px solid #2a2a2a"}}>
+                                      {["Cód","Descrição","Qtd Sug.","Saldo Est.","Vlr Unit.",...(editandoItens?[""]:[])].map(h=>(
+                                        <th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#555",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {itens.map((it,i)=>(
+                                      <tr key={i} style={{borderBottom:"1px solid #1a1a1a",background:i%2===0?"transparent":"rgba(255,255,255,0.02)"}}>
+                                        {editandoItens?(
+                                          <>
+                                            <td style={{padding:"4px 6px",minWidth:60}}>
+                                              <input value={it.cod||""} onChange={e=>updItem(i,"cod",e.target.value)} style={{...iStyle,color:"#fbbf24",width:65}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:200}}>
+                                              <input value={it.descricao||""} onChange={e=>updItem(i,"descricao",e.target.value)} style={{...iStyle,color:"#e2e8f0",minWidth:180}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:60}}>
+                                              <input value={it.qtdSugerida||""} onChange={e=>updItem(i,"qtdSugerida",e.target.value)} style={{...iStyle,color:"#cc0000",width:65,textAlign:"center"}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:70}}>
+                                              <input value={it.saldoEstoque||""} onChange={e=>updItem(i,"saldoEstoque",e.target.value)} style={{...iStyle,color:"#34d399",width:70,textAlign:"center"}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",minWidth:80}}>
+                                              <input value={it.vlrUnit||""} onChange={e=>updItem(i,"vlrUnit",e.target.value)} placeholder="R$" style={{...iStyle,color:"#34d399",width:80,textAlign:"right"}}/>
+                                            </td>
+                                            <td style={{padding:"4px 6px",textAlign:"center"}}>
+                                              <button onClick={()=>removeItem(i)} style={{background:"transparent",border:"1px solid #7f1d1d",borderRadius:4,color:"#f87171",padding:"2px 7px",cursor:"pointer",fontSize:11}}>✕</button>
+                                            </td>
+                                          </>
+                                        ):(
+                                          <>
+                                            <td style={{padding:"5px 10px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>{it.cod||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:"#e2e8f0",maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.descricao}>{it.descricao||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:"#cc0000",textAlign:"center"}}>{it.qtdSugerida||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:parseInt(it.saldoEstoque||"1")<=0?"#f87171":"#34d399",textAlign:"center",fontWeight:700}}>{it.saldoEstoque||"—"}</td>
+                                            <td style={{padding:"5px 10px",color:"#34d399",textAlign:"right"}}>{it.vlrUnit||"—"}</td>
+                                          </>
+                                        )}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {sub==="solicitacoes"&&(
+        <div>
+          <div style={{background:"#141414",border:"1px solid #2a2a2a",borderRadius:10,padding:"16px 18px",marginBottom:18}}>
+            <div style={{color:"#a78bfa",fontWeight:700,fontSize:13,marginBottom:12}}>➕ Nova Solicitação</div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div>
+                <label style={{color:"#64748b",fontSize:11,display:"block",marginBottom:4}}>Código</label>
+                <input value={novaSol.cod}
+                  onChange={e=>{const cod=e.target.value;const d=new Date();setNovaSol({cod,descricao:catalogo[cod.trim()]||"",data:`${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`});}}
+                  placeholder="Ex: 3620"
+                  style={{background:"#0a0a0a",border:"1px solid #334155",borderRadius:7,padding:"8px 12px",color:"#e2e8f0",fontSize:13,width:100}}/>
+              </div>
+              <div style={{flex:1,minWidth:200}}>
+                <label style={{color:"#64748b",fontSize:11,display:"block",marginBottom:4}}>Descrição</label>
+                <input value={novaSol.descricao} onChange={e=>setNovaSol(s=>({...s,descricao:e.target.value}))} placeholder="Preenchido pelo código..."
+                  style={{width:"100%",background:"#0a0a0a",border:"1px solid #334155",borderRadius:7,padding:"8px 12px",color:"#e2e8f0",fontSize:13,boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{color:"#64748b",fontSize:11,display:"block",marginBottom:4}}>Data</label>
+                <input value={novaSol.data} onChange={e=>setNovaSol(s=>({...s,data:e.target.value}))}
+                  style={{background:"#0a0a0a",border:"1px solid #334155",borderRadius:7,padding:"8px 12px",color:"#fbbf24",fontSize:13,width:110}}/>
+              </div>
+              <button onClick={addSol} style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:7,padding:"9px 20px",cursor:"pointer",fontWeight:700,fontSize:13}}>Solicitar</button>
+            </div>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{background:"#141414",borderBottom:"2px solid #7c3aed"}}>
+                  {["Data","Cód","Descrição","Resposta","Data Resp",""].map(h=>(
+                    <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#94a3b8",fontWeight:600,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {solicitacoes.map((s,i)=>{
+                  const rc=s.resposta==="COMPRADO / PEDIDO FEITO"?"#34d399":s.resposta==="EM COTAÇÃO"?"#fbbf24":s.resposta==="FALTA NO FORNECEDOR"?"#f87171":s.resposta==="CHEGOU"?"#67e8f9":"#555";
+                  return(
+                    <tr key={i} style={{borderBottom:"1px solid #1a1a1a",background:i%2===0?"#0a0a0a":"#111"}}>
+                      <td style={{padding:"7px 10px",color:"#64748b",whiteSpace:"nowrap"}}>{s.data}</td>
+                      <td style={{padding:"7px 10px",color:"#94a3b8",fontWeight:700}}>{s.cod}</td>
+                      <td style={{padding:"7px 10px",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.descricao}>{s.descricao}</td>
+                      <td style={{padding:"7px 10px"}}>
+                        <select value={s.resposta||""} onChange={e=>updSol(i,"resposta",e.target.value)}
+                          style={{background:"#141414",border:`1px solid ${rc}`,borderRadius:6,padding:"4px 8px",color:rc,fontWeight:700,fontSize:11,cursor:"pointer"}}>
+                          <option value="">— sem resposta —</option>
+                          <option value="EM COTAÇÃO">EM COTAÇÃO</option>
+                          <option value="COMPRADO / PEDIDO FEITO">COMPRADO / PEDIDO FEITO</option>
+                          <option value="FALTA NO FORNECEDOR">FALTA NO FORNECEDOR</option>
+                          <option value="CHEGOU">CHEGOU</option>
+                        </select>
+                      </td>
+                      <td style={{padding:"7px 10px"}}>
+                        <input value={s.dataResposta||""} onChange={e=>updSol(i,"dataResposta",e.target.value)} placeholder="dd/mm/aaaa"
+                          style={{background:"#0a0a0a",border:"1px solid #2a2a2a",borderRadius:5,padding:"4px 7px",color:"#4ade80",fontSize:11,width:90}}/>
+                      </td>
+                      <td style={{padding:"7px 10px"}}>
+                        <button onClick={()=>setSolicitacoes(prev=>prev.filter((_,idx)=>idx!==i))}
+                          style={{background:"transparent",border:"1px solid #3a1a1a",borderRadius:5,color:"#cc0000",padding:"3px 8px",cursor:"pointer",fontSize:11}}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div style={{marginTop:30,borderTop:"1px solid #1a1a1a",paddingTop:20}}>
+        <h3 style={{color:"#cc0000",fontSize:14,fontWeight:700,marginBottom:12}}>📞 Fornecedores / Contatos</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>
+          {PLANILHA_DATA.contatos.map(c=>(
+            <div key={c.cod} style={{background:"#141414",borderRadius:8,padding:"12px 14px",border:"1px solid #2a2a2a"}}>
+              <div style={{fontWeight:700,color:"#cc0000",fontSize:13}}>{c.empresa}</div>
+              <div style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{c.vendedor}</div>
+              <div style={{color:"#fbbf24",fontSize:12,marginTop:2}}>{c.telefone}</div>
+              {c.fatMin&&<div style={{color:"#555",fontSize:11,marginTop:2}}>Mín: R$ {c.fatMin}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
